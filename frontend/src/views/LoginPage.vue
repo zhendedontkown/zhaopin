@@ -39,8 +39,8 @@ const sidePanelContent = {
 }
 
 const loginForm = reactive({
-  account: 'alice@example.com',
-  password: '123456',
+  account: '',
+  password: '',
 })
 
 const companyForm = reactive({
@@ -59,8 +59,51 @@ const jobseekerForm = reactive({
   password: '',
 })
 
+function resetLoginForm(options?: { preserveAccount?: boolean }) {
+  const preserveAccount = options?.preserveAccount ?? false
+  const nextAccount = preserveAccount ? loginForm.account : ''
+  loginForm.account = nextAccount
+  loginForm.password = ''
+}
+
+function resetJobseekerForm() {
+  jobseekerForm.fullName = ''
+  jobseekerForm.phone = ''
+  jobseekerForm.email = ''
+  jobseekerForm.password = ''
+}
+
+function resetCompanyForm() {
+  companyForm.companyName = ''
+  companyForm.unifiedSocialCreditCode = ''
+  companyForm.contactPerson = ''
+  companyForm.phone = ''
+  companyForm.email = ''
+  companyForm.password = ''
+}
+
 function switchMode(nextMode: AuthMode) {
+  if (nextMode === 'register') {
+    resetJobseekerForm()
+    resetCompanyForm()
+  } else {
+    resetLoginForm({ preserveAccount: true })
+  }
   mode.value = nextMode
+}
+
+function switchRegisterRole(nextRole: RegisterRole) {
+  if (nextRole === registerRole.value) {
+    return
+  }
+
+  if (nextRole === 'jobseeker') {
+    resetJobseekerForm()
+  } else {
+    resetCompanyForm()
+  }
+
+  registerRole.value = nextRole
 }
 
 function useDemoAccount(demo: DemoAccount) {
@@ -86,11 +129,13 @@ async function submitLogin() {
 async function submitCompanyRegister() {
   submitting.value = true
   try {
+    const registeredEmail = companyForm.email
     await client.post('/auth/company/register', companyForm)
     ElMessage.success('企业账号已创建，请等待管理员审核')
-    mode.value = 'login'
-    loginForm.account = companyForm.email
-    loginForm.password = companyForm.password
+    switchMode('login')
+    loginForm.account = registeredEmail
+    loginForm.password = ''
+    resetCompanyForm()
   } finally {
     submitting.value = false
   }
@@ -99,11 +144,13 @@ async function submitCompanyRegister() {
 async function submitJobseekerRegister() {
   submitting.value = true
   try {
+    const registeredEmail = jobseekerForm.email
     await client.post('/auth/jobseeker/register', jobseekerForm)
     ElMessage.success('求职者账号创建成功，请登录后继续完善信息')
-    mode.value = 'login'
-    loginForm.account = jobseekerForm.email
-    loginForm.password = jobseekerForm.password
+    switchMode('login')
+    loginForm.account = registeredEmail
+    loginForm.password = ''
+    resetJobseekerForm()
   } finally {
     submitting.value = false
   }
@@ -154,11 +201,12 @@ async function submitJobseekerRegister() {
 
               <el-form class="auth-form" label-position="top" @submit.prevent="submitLogin">
                 <el-form-item label="账号">
-                  <el-input v-model="loginForm.account" placeholder="邮箱或手机号" />
+                  <el-input v-model="loginForm.account" autocomplete="username" placeholder="邮箱或手机号" />
                 </el-form-item>
                 <el-form-item label="密码">
                   <el-input
                     v-model="loginForm.password"
+                    autocomplete="current-password"
                     type="password"
                     show-password
                     placeholder="请输入密码"
@@ -186,7 +234,7 @@ async function submitJobseekerRegister() {
                   type="button"
                   class="auth-role-switch__item"
                   :class="{ 'is-active': registerRole === 'jobseeker' }"
-                  @click="registerRole = 'jobseeker'"
+                  @click="switchRegisterRole('jobseeker')"
                 >
                   求职者
                 </button>
@@ -194,7 +242,7 @@ async function submitJobseekerRegister() {
                   type="button"
                   class="auth-role-switch__item"
                   :class="{ 'is-active': registerRole === 'company' }"
-                  @click="registerRole = 'company'"
+                  @click="switchRegisterRole('company')"
                 >
                   企业用户
                 </button>
@@ -218,11 +266,12 @@ async function submitJobseekerRegister() {
                   </div>
                   <div class="auth-form__grid">
                     <el-form-item label="邮箱">
-                      <el-input v-model="jobseekerForm.email" placeholder="请输入邮箱" />
+                      <el-input v-model="jobseekerForm.email" autocomplete="email" placeholder="请输入邮箱" />
                     </el-form-item>
                     <el-form-item label="密码">
                       <el-input
                         v-model="jobseekerForm.password"
+                        autocomplete="new-password"
                         type="password"
                         show-password
                         placeholder="8 到 32 位密码"
@@ -263,11 +312,12 @@ async function submitJobseekerRegister() {
                   </div>
                   <div class="auth-form__grid">
                     <el-form-item label="邮箱">
-                      <el-input v-model="companyForm.email" placeholder="请输入企业邮箱" />
+                      <el-input v-model="companyForm.email" autocomplete="email" placeholder="请输入企业邮箱" />
                     </el-form-item>
                     <el-form-item label="密码">
                       <el-input
                         v-model="companyForm.password"
+                        autocomplete="new-password"
                         type="password"
                         show-password
                         placeholder="8 到 32 位密码"

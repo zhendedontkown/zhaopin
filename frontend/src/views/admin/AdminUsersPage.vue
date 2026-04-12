@@ -257,7 +257,7 @@ onMounted(fetchCompanyUsers)
           <section class="filter-panel">
             <div class="filter-grid">
               <el-form-item label="关键词">
-                <el-input v-model.trim="jobseekerFilters.keyword" placeholder="姓名 / 电话 / 邮箱 / 学历 / 求职方向" clearable />
+                <el-input v-model.trim="jobseekerFilters.keyword" placeholder="姓名 / 电话 / 邮箱" clearable />
               </el-form-item>
               <el-form-item label="账号状态">
                 <el-select v-model="jobseekerFilters.userStatus" placeholder="默认排除已删除" clearable>
@@ -280,8 +280,6 @@ onMounted(fetchCompanyUsers)
                 <div class="table-note">{{ row.phone }} · {{ row.email }}</div>
               </template>
             </el-table-column>
-            <el-table-column prop="highestEducation" label="最高学历" min-width="120" />
-            <el-table-column prop="desiredPositionCategory" label="求职方向" min-width="160" />
             <el-table-column label="账号状态" min-width="120">
               <template #default="{ row }">
                 <el-tag :type="userStatusType(row.userStatus)">{{ userStatusLabel(row.userStatus) }}</el-tag>
