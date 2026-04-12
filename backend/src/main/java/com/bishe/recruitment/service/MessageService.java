@@ -28,20 +28,18 @@ public class MessageService {
     private final ChatMessageMapper chatMessageMapper;
     private final CompanyProfileMapper companyProfileMapper;
     private final JobseekerProfileMapper jobseekerProfileMapper;
-    private final ApplicationService applicationService;
     private final UserSupportService userSupportService;
     private final NotificationService notificationService;
     private final SimpMessagingTemplate simpMessagingTemplate;
 
     public MessageService(ConversationMapper conversationMapper, ChatMessageMapper chatMessageMapper,
                           CompanyProfileMapper companyProfileMapper, JobseekerProfileMapper jobseekerProfileMapper,
-                          ApplicationService applicationService, UserSupportService userSupportService,
-                          NotificationService notificationService, SimpMessagingTemplate simpMessagingTemplate) {
+                          UserSupportService userSupportService, NotificationService notificationService,
+                          SimpMessagingTemplate simpMessagingTemplate) {
         this.conversationMapper = conversationMapper;
         this.chatMessageMapper = chatMessageMapper;
         this.companyProfileMapper = companyProfileMapper;
         this.jobseekerProfileMapper = jobseekerProfileMapper;
-        this.applicationService = applicationService;
         this.userSupportService = userSupportService;
         this.notificationService = notificationService;
         this.simpMessagingTemplate = simpMessagingTemplate;
@@ -85,7 +83,6 @@ public class MessageService {
 
         Long companyUserId = UserRole.COMPANY.name().equals(currentRole) ? currentUserId : peerUserId;
         Long jobseekerUserId = UserRole.JOBSEEKER.name().equals(currentRole) ? currentUserId : peerUserId;
-        ensureApplicationRelation(companyUserId, jobseekerUserId);
 
         Conversation conversation = getOrCreateConversation(companyUserId, jobseekerUserId);
         return toConversationView(conversation, currentUserId);
@@ -111,7 +108,6 @@ public class MessageService {
 
         Long companyUserId = UserRole.COMPANY.name().equals(senderRole) ? senderUserId : receiverUserId;
         Long jobseekerUserId = UserRole.JOBSEEKER.name().equals(senderRole) ? senderUserId : receiverUserId;
-        ensureApplicationRelation(companyUserId, jobseekerUserId);
 
         Conversation conversation = getOrCreateConversation(companyUserId, jobseekerUserId);
         return persistAndDispatch(senderUserId, receiverUserId, conversation, content);
@@ -162,13 +158,6 @@ public class MessageService {
         if (conversation == null || (!currentUserId.equals(conversation.getCompanyUserId())
                 && !currentUserId.equals(conversation.getJobseekerUserId()))) {
             throw new BusinessException("\u4f1a\u8bdd\u4e0d\u5b58\u5728");
-        }
-    }
-
-    private void ensureApplicationRelation(Long companyUserId, Long jobseekerUserId) {
-        if (!applicationService.existsApplicationBetween(companyUserId, jobseekerUserId)) {
-            throw new BusinessException(
-                    "\u53cc\u65b9\u9700\u8981\u5b58\u5728\u5c97\u4f4d\u6295\u9012\u5173\u7cfb\u540e\u624d\u53ef\u53d1\u8d77\u804a\u5929");
         }
     }
 

@@ -19,7 +19,9 @@ import com.bishe.recruitment.security.JwtUtils;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthService {
@@ -46,8 +48,12 @@ public class AuthService {
     }
 
     public Map<String, Object> registerCompany(AuthDtos.CompanyRegisterRequest request) {
-        SysUser user = userSupportService.createUser(request.getEmail(), request.getPhone(), request.getPassword(),
-                request.getCompanyName(), UserRole.COMPANY);
+        SysUser user = userSupportService.createUser(
+                request.getEmail(),
+                request.getPhone(),
+                request.getPassword(),
+                request.getCompanyName(),
+                UserRole.COMPANY);
         CompanyProfile profile = new CompanyProfile();
         profile.setUserId(user.getId());
         profile.setCompanyName(request.getCompanyName());
@@ -58,18 +64,17 @@ public class AuthService {
         profile.setAuditStatus(CompanyAuditStatus.PENDING.name());
         companyProfileMapper.insert(profile);
 
-        List<Long> adminIds = userSupportService.listUserIdsByRole(UserRole.ADMIN);
-        adminIds.forEach(adminId -> notificationService.createAndPush(
-                adminId,
-                NotificationType.COMPANY_AUDIT,
-                "新的企业入驻申请",
-                request.getCompanyName() + " 已提交企业认证申请，请尽快审核。"));
+        notifyAdminsForCompanyAudit(request.getCompanyName(), "提交了企业认证申请，请尽快审核。");
         return Map.of("userId", user.getId(), "auditStatus", profile.getAuditStatus());
     }
 
     public Map<String, Object> registerJobseeker(AuthDtos.JobseekerRegisterRequest request) {
-        SysUser user = userSupportService.createUser(request.getEmail(), request.getPhone(), request.getPassword(),
-                request.getFullName(), UserRole.JOBSEEKER);
+        SysUser user = userSupportService.createUser(
+                request.getEmail(),
+                request.getPhone(),
+                request.getPassword(),
+                request.getFullName(),
+                UserRole.JOBSEEKER);
         JobseekerProfile profile = new JobseekerProfile();
         profile.setUserId(user.getId());
         profile.setFullName(request.getFullName());
@@ -115,14 +120,117 @@ public class AuthService {
         result.put("workspaceLabel", buildWorkspaceLabel(roles));
 
         if (roles.contains(UserRole.COMPANY.name())) {
-            result.put("companyProfile", companyProfileMapper.selectOne(new LambdaQueryWrapper<CompanyProfile>()
-                    .eq(CompanyProfile::getUserId, userId)));
+            result.put(
+                    "companyProfile",
+                    companyProfileMapper.selectOne(new LambdaQueryWrapper<CompanyProfile>()
+                            .eq(CompanyProfile::getUserId, userId)));
         }
         if (roles.contains(UserRole.JOBSEEKER.name())) {
-            result.put("jobseekerProfile", jobseekerProfileMapper.selectOne(new LambdaQueryWrapper<JobseekerProfile>()
-                    .eq(JobseekerProfile::getUserId, userId)));
+            result.put(
+                    "jobseekerProfile",
+                    jobseekerProfileMapper.selectOne(new LambdaQueryWrapper<JobseekerProfile>()
+                            .eq(JobseekerProfile::getUserId, userId)));
         }
         return result;
+    }
+
+    @Transactional
+    public Map<String, Object> updateJobseekerProfile(Long userId, AuthDtos.JobseekerProfileUpdateRequest request) {
+        userSupportService.ensureAccountUnique(request.getEmail(), request.getPhone(), userId);
+
+        SysUser user = userSupportService.getUserById(userId);
+        JobseekerProfile profile = userSupportService.getJobseekerProfileByUserId(userId);
+        if (profile == null) {
+            throw new BusinessException("求职者资料不存在");
+        }
+
+        user.setUsername(request.getEmail());
+        user.setEmail(request.getEmail());
+        user.setPhone(request.getPhone());
+        user.setDisplayName(request.getFullName());
+        userSupportService.updateUser(user);
+
+        profile.setFullName(request.getFullName());
+        profile.setPhone(request.getPhone());
+        profile.setEmail(request.getEmail());
+        jobseekerProfileMapper.updateById(profile);
+
+        return currentProfile(userId);
+    }
+
+    @Transactional
+    public Map<String, Object> updateCompanyProfile(Long userId, AuthDtos.CompanyProfileUpdateRequest request) {
+        userSupportService.ensureAccountUnique(request.getEmail(), request.getPhone(), userId);
+        ensureCompanyCreditCodeUnique(request.getUnifiedSocialCreditCode(), userId);
+
+        SysUser user = userSupportService.getUserById(userId);
+        CompanyProfile profile = userSupportService.getCompanyProfileByUserId(userId);
+        if (profile == null) {
+            throw new BusinessException("企业资料不存在");
+        }
+
+        boolean coreChanged = !Objects.equals(profile.getCompanyName(), request.getCompanyName())
+                || !Objects.equals(profile.getUnifiedSocialCreditCode(), request.getUnifiedSocialCreditCode());
+
+        user.setUsername(request.getEmail());
+        user.setEmail(request.getEmail());
+        user.setPhone(request.getPhone());
+        user.setDisplayName(request.getCompanyName());
+        userSupportService.updateUser(user);
+
+        profile.setCompanyName(request.getCompanyName());
+        profile.setUnifiedSocialCreditCode(request.getUnifiedSocialCreditCode());
+        profile.setContactPerson(request.getContactPerson());
+        profile.setPhone(request.getPhone());
+        profile.setEmail(request.getEmail());
+        profile.setAddress(request.getAddress());
+        profile.setDescription(request.getDescription());
+        if (coreChanged) {
+            profile.setAuditStatus(CompanyAuditStatus.PENDING.name());
+        }
+        companyProfileMapper.updateById(profile);
+
+        if (coreChanged) {
+            notifyAdminsForCompanyAudit(request.getCompanyName(), "更新了企业认证核心资料，请重新审核。");
+        }
+
+        return currentProfile(userId);
+    }
+
+    @Transactional
+    public void changePassword(Long userId, AuthDtos.ChangePasswordRequest request) {
+        if (!Objects.equals(request.getNewPassword(), request.getConfirmPassword())) {
+            throw new BusinessException("两次输入的新密码不一致");
+        }
+
+        SysUser user = userSupportService.getUserById(userId);
+        if (!userSupportService.passwordEncoder().matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new BusinessException("当前密码不正确");
+        }
+        if (userSupportService.passwordEncoder().matches(request.getNewPassword(), user.getPassword())) {
+            throw new BusinessException("新密码不能与当前密码相同");
+        }
+
+        user.setPassword(userSupportService.passwordEncoder().encode(request.getNewPassword()));
+        userSupportService.updateUser(user);
+    }
+
+    private void ensureCompanyCreditCodeUnique(String unifiedSocialCreditCode, Long userId) {
+        long duplicateCount = companyProfileMapper.selectCount(new LambdaQueryWrapper<CompanyProfile>()
+                .eq(CompanyProfile::getUnifiedSocialCreditCode, unifiedSocialCreditCode)
+                .ne(CompanyProfile::getUserId, userId));
+        if (duplicateCount > 0) {
+            throw new BusinessException("统一社会信用代码已被使用");
+        }
+    }
+
+    private void notifyAdminsForCompanyAudit(String companyName, String suffix) {
+        List<Long> adminIds = userSupportService.listUserIdsByRole(UserRole.ADMIN);
+        adminIds.forEach(adminId -> notificationService.createAndPush(
+                adminId,
+                NotificationType.COMPANY_AUDIT,
+                "企业认证待审核",
+                companyName + suffix));
     }
 
     private String buildWorkspaceLabel(List<String> roles) {

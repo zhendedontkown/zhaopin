@@ -40,10 +40,25 @@ public class UserSupportService {
     }
 
     public void ensureAccountUnique(String email, String phone) {
-        if (sysUserMapper.selectCount(new LambdaQueryWrapper<SysUser>().eq(SysUser::getEmail, email)) > 0) {
+        ensureAccountUnique(email, phone, null);
+    }
+
+    public void ensureAccountUnique(String email, String phone, Long excludeUserId) {
+        LambdaQueryWrapper<SysUser> emailWrapper = new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getEmail, email);
+        if (excludeUserId != null) {
+            emailWrapper.ne(SysUser::getId, excludeUserId);
+        }
+        if (sysUserMapper.selectCount(emailWrapper) > 0) {
             throw new BusinessException("邮箱已被注册");
         }
-        if (sysUserMapper.selectCount(new LambdaQueryWrapper<SysUser>().eq(SysUser::getPhone, phone)) > 0) {
+
+        LambdaQueryWrapper<SysUser> phoneWrapper = new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getPhone, phone);
+        if (excludeUserId != null) {
+            phoneWrapper.ne(SysUser::getId, excludeUserId);
+        }
+        if (sysUserMapper.selectCount(phoneWrapper) > 0) {
             throw new BusinessException("手机号已被注册");
         }
     }
@@ -92,6 +107,10 @@ public class UserSupportService {
     public String getDisplayName(Long userId) {
         SysUser user = sysUserMapper.selectById(userId);
         return user == null ? "" : user.getDisplayName();
+    }
+
+    public void updateUser(SysUser user) {
+        sysUserMapper.updateById(user);
     }
 
     public List<String> getRoles(Long userId) {

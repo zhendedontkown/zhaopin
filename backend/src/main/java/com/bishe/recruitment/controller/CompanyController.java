@@ -3,8 +3,10 @@ package com.bishe.recruitment.controller;
 import com.bishe.recruitment.common.ApiResponse;
 import com.bishe.recruitment.dto.AdminDtos;
 import com.bishe.recruitment.dto.ApplicationDtos;
+import com.bishe.recruitment.dto.AuthDtos;
 import com.bishe.recruitment.dto.JobDtos;
 import com.bishe.recruitment.service.ApplicationService;
+import com.bishe.recruitment.service.AuthService;
 import com.bishe.recruitment.service.JobService;
 import com.bishe.recruitment.util.SecurityUtils;
 import jakarta.validation.Valid;
@@ -25,10 +27,12 @@ public class CompanyController {
 
     private final JobService jobService;
     private final ApplicationService applicationService;
+    private final AuthService authService;
 
-    public CompanyController(JobService jobService, ApplicationService applicationService) {
+    public CompanyController(JobService jobService, ApplicationService applicationService, AuthService authService) {
         this.jobService = jobService;
         this.applicationService = applicationService;
+        this.authService = authService;
     }
 
     @PostMapping("/jobs")
@@ -49,7 +53,9 @@ public class CompanyController {
 
     @PatchMapping("/jobs/{jobId}/status")
     public ApiResponse<?> updateJobStatus(@PathVariable Long jobId, @Valid @RequestBody AdminDtos.JobStatusRequest request) {
-        return ApiResponse.success("岗位状态已更新", jobService.updateJobStatusByCompany(SecurityUtils.currentUserId(), jobId, request.getStatus()));
+        return ApiResponse.success(
+                "岗位状态已更新",
+                jobService.updateJobStatusByCompany(SecurityUtils.currentUserId(), jobId, request.getStatus()));
     }
 
     @GetMapping("/jobs")
@@ -69,7 +75,19 @@ public class CompanyController {
     @PatchMapping("/applications/{applicationId}/status")
     public ApiResponse<?> updateApplicationStatus(@PathVariable Long applicationId,
                                                   @Valid @RequestBody ApplicationDtos.UpdateApplicationStatusRequest request) {
-        return ApiResponse.success("投递状态已更新",
+        return ApiResponse.success(
+                "投递状态已更新",
                 applicationService.updateStatus(SecurityUtils.currentUserId(), applicationId, request));
+    }
+
+    @GetMapping("/applications/{applicationId}/resume")
+    public ApiResponse<?> getApplicationResume(@PathVariable Long applicationId,
+                                               @RequestParam(defaultValue = "true") boolean markViewed) {
+        return ApiResponse.success(applicationService.getResumeForCompanyView(SecurityUtils.currentUserId(), applicationId, markViewed));
+    }
+
+    @PutMapping("/profile")
+    public ApiResponse<?> updateProfile(@Valid @RequestBody AuthDtos.CompanyProfileUpdateRequest request) {
+        return ApiResponse.success("企业资料已更新", authService.updateCompanyProfile(SecurityUtils.currentUserId(), request));
     }
 }

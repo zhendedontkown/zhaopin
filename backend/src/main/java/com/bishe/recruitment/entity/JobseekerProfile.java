@@ -1,8 +1,10 @@
 package com.bishe.recruitment.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.util.List;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -33,4 +35,14 @@ public class JobseekerProfile extends BaseEntity {
     private String highestEducation;
 
     private Integer yearsOfExperience;
+
+    private String preferredSkillTagsJson;
+
+    private String preferredBenefitTagsJson;
+
+    @TableField(exist = false)
+    private List<String> preferredSkillTags;
+
+    @TableField(exist = false)
+    private List<String> preferredBenefitTags;
 }

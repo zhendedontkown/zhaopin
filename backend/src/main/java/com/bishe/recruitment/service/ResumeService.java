@@ -1,7 +1,9 @@
 package com.bishe.recruitment.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bishe.recruitment.common.BusinessException;
+import com.bishe.recruitment.common.PageResponse;
 import com.bishe.recruitment.dto.ResumeDtos;
 import com.bishe.recruitment.entity.JobseekerProfile;
 import com.bishe.recruitment.entity.Resume;
@@ -10,6 +12,7 @@ import com.bishe.recruitment.entity.ResumeExperience;
 import com.bishe.recruitment.entity.ResumeExtraSectionItem;
 import com.bishe.recruitment.entity.ResumeProject;
 import com.bishe.recruitment.entity.ResumeSkill;
+import com.bishe.recruitment.entity.SavedResume;
 import com.bishe.recruitment.entity.SkillDict;
 import com.bishe.recruitment.mapper.JobseekerProfileMapper;
 import com.bishe.recruitment.mapper.ResumeEducationMapper;
@@ -18,6 +21,7 @@ import com.bishe.recruitment.mapper.ResumeExtraSectionItemMapper;
 import com.bishe.recruitment.mapper.ResumeMapper;
 import com.bishe.recruitment.mapper.ResumeProjectMapper;
 import com.bishe.recruitment.mapper.ResumeSkillMapper;
+import com.bishe.recruitment.mapper.SavedResumeMapper;
 import com.bishe.recruitment.mapper.SkillDictMapper;
 import com.bishe.recruitment.util.ResumeModuleConfigSupport;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -51,6 +55,7 @@ public class ResumeService {
     private final ResumeProjectMapper resumeProjectMapper;
     private final ResumeExtraSectionItemMapper resumeExtraSectionItemMapper;
     private final ResumeSkillMapper resumeSkillMapper;
+    private final SavedResumeMapper savedResumeMapper;
     private final SkillDictMapper skillDictMapper;
     private final JobseekerProfileMapper jobseekerProfileMapper;
     private final ObjectMapper objectMapper;
@@ -58,14 +63,15 @@ public class ResumeService {
     public ResumeService(ResumeMapper resumeMapper, ResumeEducationMapper resumeEducationMapper,
                          ResumeExperienceMapper resumeExperienceMapper, ResumeProjectMapper resumeProjectMapper,
                          ResumeExtraSectionItemMapper resumeExtraSectionItemMapper, ResumeSkillMapper resumeSkillMapper,
-                         SkillDictMapper skillDictMapper, JobseekerProfileMapper jobseekerProfileMapper,
-                         ObjectMapper objectMapper) {
+                         SavedResumeMapper savedResumeMapper, SkillDictMapper skillDictMapper,
+                         JobseekerProfileMapper jobseekerProfileMapper, ObjectMapper objectMapper) {
         this.resumeMapper = resumeMapper;
         this.resumeEducationMapper = resumeEducationMapper;
         this.resumeExperienceMapper = resumeExperienceMapper;
         this.resumeProjectMapper = resumeProjectMapper;
         this.resumeExtraSectionItemMapper = resumeExtraSectionItemMapper;
         this.resumeSkillMapper = resumeSkillMapper;
+        this.savedResumeMapper = savedResumeMapper;
         this.skillDictMapper = skillDictMapper;
         this.jobseekerProfileMapper = jobseekerProfileMapper;
         this.objectMapper = objectMapper;
@@ -74,6 +80,86 @@ public class ResumeService {
     public Map<String, Object> getResumeDetail(Long userId) {
         Resume resume = getOrCreateByUserId(userId);
         return buildResumeDetail(resume);
+    }
+
+    public Map<String, Object> getResumeDetailByResumeId(Long resumeId) {
+        Resume resume = resumeMapper.selectById(resumeId);
+        if (resume == null) {
+            throw new BusinessException("简历不存在");
+        }
+        return buildResumeDetail(resume);
+    }
+
+    public PageResponse<ResumeDtos.SavedResumeSummaryView> listSavedResumes(Long userId, boolean completeOnly,
+                                                                            long pageNum, long pageSize) {
+        Page<SavedResume> page = new Page<>(pageNum, pageSize);
+        LambdaQueryWrapper<SavedResume> wrapper = new LambdaQueryWrapper<SavedResume>()
+                .eq(SavedResume::getUserId, userId)
+                .orderByDesc(SavedResume::getUpdatedAt)
+                .orderByDesc(SavedResume::getId);
+        if (completeOnly) {
+            wrapper.eq(SavedResume::getCompleteFlag, true);
+        }
+        Page<SavedResume> result = savedResumeMapper.selectPage(page, wrapper);
+        List<ResumeDtos.SavedResumeSummaryView> records = result.getRecords().stream()
+                .map(this::toSavedResumeSummaryView)
+                .toList();
+        return PageResponse.<ResumeDtos.SavedResumeSummaryView>builder()
+                .pageNum(result.getCurrent())
+                .pageSize(result.getSize())
+                .total(result.getTotal())
+                .records(records)
+                .build();
+    }
+
+    public ResumeDtos.SavedResumeDetailView getSavedResumeDetail(Long userId, Long savedResumeId) {
+        SavedResume savedResume = getOwnedSavedResumeOrThrow(userId, savedResumeId);
+        ResumeDtos.SavedResumeDetailView view = new ResumeDtos.SavedResumeDetailView();
+        view.setId(savedResume.getId());
+        view.setName(savedResume.getName());
+        view.setTemplateCode(savedResume.getTemplateCode());
+        view.setCompletenessScore(savedResume.getCompletenessScore());
+        view.setCompleteFlag(Boolean.TRUE.equals(savedResume.getCompleteFlag()));
+        view.setMissingItems(readStringListJson(savedResume.getMissingItemsJson()));
+        view.setResumeDetail(parseResumeSnapshotJson(savedResume.getSnapshotJson()));
+        view.setCreatedAt(savedResume.getCreatedAt());
+        view.setUpdatedAt(savedResume.getUpdatedAt());
+        return view;
+    }
+
+    public SavedResume getCompleteSavedResumeOrThrow(Long userId, Long savedResumeId) {
+        SavedResume savedResume = getOwnedSavedResumeOrThrow(userId, savedResumeId);
+        if (!Boolean.TRUE.equals(savedResume.getCompleteFlag())) {
+            throw new BusinessException("所选简历尚未完善，暂时无法投递");
+        }
+        return savedResume;
+    }
+
+    public String createResumeSnapshotJson(Long resumeId) {
+        try {
+            return objectMapper.writeValueAsString(getResumeDetailByResumeId(resumeId));
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("无法序列化简历快照", ex);
+        }
+    }
+
+    public String createResumeSnapshotJson(Map<String, Object> detail) {
+        try {
+            return objectMapper.writeValueAsString(detail);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("无法序列化简历快照", ex);
+        }
+    }
+
+    public Map<String, Object> parseResumeSnapshotJson(String snapshotJson) {
+        if (!StringUtils.hasText(snapshotJson)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(snapshotJson, new TypeReference<LinkedHashMap<String, Object>>() { });
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException("简历快照解析失败");
+        }
     }
 
     public Resume getOrCreateByUserId(Long userId) {
@@ -148,6 +234,44 @@ public class ResumeService {
         resumeMapper.updateById(resume);
         syncProfile(userId, resume);
         return buildResumeDetail(resume);
+    }
+
+    @Transactional
+    public ResumeDtos.CreateSavedResumeResponse createSavedResume(Long userId, ResumeDtos.CreateSavedResumeRequest request) {
+        String normalizedName = normalizeSavedResumeName(request.getName());
+        ensureSavedResumeNameAvailable(userId, normalizedName, null);
+
+        Map<String, Object> currentDraft = saveResume(userId, request.getDraft());
+        SavedResume savedResume = buildSavedResumeEntity(userId, normalizedName, request.getDraft().getTemplateCode(), currentDraft);
+        savedResumeMapper.insert(savedResume);
+
+        ResumeDtos.CreateSavedResumeResponse response = new ResumeDtos.CreateSavedResumeResponse();
+        response.setSavedResume(toSavedResumeSummaryView(savedResume));
+        response.setCurrentDraft(currentDraft);
+        return response;
+    }
+
+    @Transactional
+    public ResumeDtos.UpdateSavedResumeResponse updateSavedResume(Long userId, Long savedResumeId,
+                                                                 ResumeDtos.UpdateSavedResumeRequest request) {
+        String normalizedName = normalizeSavedResumeName(request.getName());
+        SavedResume savedResume = getOwnedSavedResumeOrThrow(userId, savedResumeId);
+        ensureSavedResumeNameAvailable(userId, normalizedName, savedResumeId);
+
+        Map<String, Object> currentDraft = saveResume(userId, request.getDraft());
+        populateSavedResumeEntity(savedResume, normalizedName, request.getDraft().getTemplateCode(), currentDraft);
+        savedResumeMapper.updateById(savedResume);
+
+        ResumeDtos.UpdateSavedResumeResponse response = new ResumeDtos.UpdateSavedResumeResponse();
+        response.setSavedResume(toSavedResumeSummaryView(savedResume));
+        response.setCurrentDraft(currentDraft);
+        return response;
+    }
+
+    @Transactional
+    public void deleteSavedResume(Long userId, Long savedResumeId) {
+        SavedResume savedResume = getOwnedSavedResumeOrThrow(userId, savedResumeId);
+        savedResumeMapper.deleteById(savedResume.getId());
     }
 
     public Resume validateCompleteOrThrow(Long userId) {
@@ -553,6 +677,101 @@ public class ResumeService {
         hiddenAction.run();
     }
 
+    private ResumeDtos.SavedResumeSummaryView toSavedResumeSummaryView(SavedResume savedResume) {
+        ResumeDtos.SavedResumeSummaryView view = new ResumeDtos.SavedResumeSummaryView();
+        view.setId(savedResume.getId());
+        view.setName(savedResume.getName());
+        view.setTemplateCode(savedResume.getTemplateCode());
+        view.setCompletenessScore(savedResume.getCompletenessScore());
+        view.setCompleteFlag(Boolean.TRUE.equals(savedResume.getCompleteFlag()));
+        view.setCreatedAt(savedResume.getCreatedAt());
+        view.setUpdatedAt(savedResume.getUpdatedAt());
+        return view;
+    }
+
+    private SavedResume getOwnedSavedResumeOrThrow(Long userId, Long savedResumeId) {
+        SavedResume savedResume = savedResumeMapper.selectById(savedResumeId);
+        if (savedResume == null || !Objects.equals(savedResume.getUserId(), userId)) {
+            throw new BusinessException("已保存简历不存在");
+        }
+        return savedResume;
+    }
+
+    private SavedResume buildSavedResumeEntity(Long userId, String name, String templateCode, Map<String, Object> detail) {
+        SavedResume savedResume = new SavedResume();
+        savedResume.setUserId(userId);
+        populateSavedResumeEntity(savedResume, name, templateCode, detail);
+        return savedResume;
+    }
+
+    private void populateSavedResumeEntity(SavedResume savedResume, String name, String templateCode, Map<String, Object> detail) {
+        savedResume.setName(name);
+        savedResume.setTemplateCode(templateCode);
+        savedResume.setSnapshotJson(createResumeSnapshotJson(detail));
+        List<String> missingItems = extractMissingItems(detail);
+        savedResume.setMissingItemsJson(writeJson(missingItems, "无法序列化简历缺失项"));
+        savedResume.setCompletenessScore(extractCompletenessScore(detail));
+        savedResume.setCompleteFlag(missingItems.isEmpty());
+    }
+
+    private List<String> extractMissingItems(Map<String, Object> detail) {
+        Object raw = detail.get("missingItems");
+        if (raw instanceof List<?> rawList) {
+            return rawList.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::valueOf)
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private Integer extractCompletenessScore(Map<String, Object> detail) {
+        Object raw = detail.get("completenessScore");
+        if (raw instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
+    }
+
+    private String normalizeSavedResumeName(String name) {
+        if (!StringUtils.hasText(name)) {
+            throw new BusinessException("简历名称不能为空");
+        }
+        return name.trim();
+    }
+
+    private void ensureSavedResumeNameAvailable(Long userId, String name, Long excludeSavedResumeId) {
+        LambdaQueryWrapper<SavedResume> wrapper = new LambdaQueryWrapper<SavedResume>()
+                .eq(SavedResume::getUserId, userId)
+                .eq(SavedResume::getName, name);
+        if (excludeSavedResumeId != null) {
+            wrapper.ne(SavedResume::getId, excludeSavedResumeId);
+        }
+        long duplicateCount = savedResumeMapper.selectCount(wrapper);
+        if (duplicateCount > 0) {
+            throw new BusinessException("简历名称已存在，请更换后重试");
+        }
+    }
+
+    private List<String> readStringListJson(String json) {
+        if (!StringUtils.hasText(json)) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() { });
+        } catch (JsonProcessingException ex) {
+            return List.of();
+        }
+    }
+
+    private String writeJson(Object value, String message) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException(message, ex);
+        }
+    }
+
     private void syncProfile(Long userId, Resume resume) {
         JobseekerProfile profile = jobseekerProfileMapper.selectOne(new LambdaQueryWrapper<JobseekerProfile>()
                 .eq(JobseekerProfile::getUserId, userId));
@@ -562,12 +781,6 @@ public class ResumeService {
         profile.setFullName(resume.getFullName());
         profile.setPhone(resume.getPhone());
         profile.setEmail(resume.getEmail());
-        profile.setDesiredPositionCategory(resume.getExpectedCategory());
-        profile.setExpectedSalaryMin(resume.getExpectedSalaryMin());
-        profile.setExpectedSalaryMax(resume.getExpectedSalaryMax());
-        profile.setPreferredCity(resume.getCity());
-        profile.setHighestEducation(resume.getHighestEducation());
-        profile.setYearsOfExperience(resume.getYearsOfExperience());
         jobseekerProfileMapper.updateById(profile);
     }
 

@@ -23,11 +23,16 @@ public class NotificationService {
     }
 
     public Notification createAndPush(Long userId, NotificationType type, String title, String content) {
-        return createAndPush(userId, type, title, content, null, null);
+        return createAndPush(userId, type, title, content, null, null, null);
     }
 
     public Notification createAndPush(Long userId, NotificationType type, String title, String content,
                                       Long relatedUserId, Long relatedConversationId) {
+        return createAndPush(userId, type, title, content, relatedUserId, relatedConversationId, null);
+    }
+
+    public Notification createAndPush(Long userId, NotificationType type, String title, String content,
+                                      Long relatedUserId, Long relatedConversationId, Long relatedApplicationId) {
         Notification notification = new Notification();
         notification.setUserId(userId);
         notification.setType(type.name());
@@ -36,6 +41,7 @@ public class NotificationService {
         notification.setReadFlag(0);
         notification.setRelatedUserId(relatedUserId);
         notification.setRelatedConversationId(relatedConversationId);
+        notification.setRelatedApplicationId(relatedApplicationId);
         notification.setCreatedAt(LocalDateTime.now());
         notificationMapper.insert(notification);
         simpMessagingTemplate.convertAndSendToUser(String.valueOf(userId), "/queue/notifications", notification);

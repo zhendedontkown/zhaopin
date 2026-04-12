@@ -1,13 +1,33 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import { useRoute, useRouter } from 'vue-router'
 import client from '../api/client'
-import type { ResumeCustomFieldItem, ResumeDetail, ResumeEducation, ResumeExperience, ResumeExtraSectionItem, ResumeModuleConfigItem, ResumePayload, ResumeProject } from '../types'
+import ResumeExportDialog from '../components/ResumeExportDialog.vue'
+import ResumePreviewDocument from '../components/ResumePreviewDocument.vue'
+import type {
+  CreateSavedResumeRequest,
+  CreateSavedResumeResponse,
+  ResumeCustomFieldItem,
+  ResumeDetail,
+  ResumeEducation,
+  ResumeExperience,
+  ResumeExtraSectionItem,
+  ResumeModuleConfigItem,
+  ResumePayload,
+  ResumeProject,
+  SavedResumeDetail,
+  UpdateSavedResumeRequest,
+  UpdateSavedResumeResponse,
+} from '../types'
 
 type ModuleCode = 'basicInfo' | 'jobIntent' | 'education' | 'workExperience' | 'projectExperience' | 'internshipExperience' | 'campusExperience' | 'skills' | 'honors' | 'selfEvaluation' | 'hobbies' | 'customFields'
+
+const route = useRoute()
+const router = useRouter()
 
 const MODULE_DEFINITIONS: ResumeModuleConfigItem[] = [
   { code: 'basicInfo', label: '基本信息', visible: true, order: 0 },
@@ -25,6 +45,12 @@ const MODULE_DEFINITIONS: ResumeModuleConfigItem[] = [
 ]
 
 const loading = ref(false)
+const exportDialogVisible = ref(false)
+const saveDialogVisible = ref(false)
+const saveDialogSubmitting = ref(false)
+const savedResumeName = ref('')
+const editingSavedResumeId = ref<number | null>(null)
+const editingSavedResumeName = ref('')
 const skillOptions = ref<string[]>([])
 const missingItems = ref<string[]>([])
 const completenessScore = ref(0)
@@ -84,22 +110,8 @@ const form = reactive<ResumePayload>({
 
 const sortedModules = computed(() => [...form.moduleConfig].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)))
 const visibleModules = computed(() => sortedModules.value.filter((item) => item.visible))
-const paperModules = computed(() => visibleModules.value.filter((item) => item.code !== 'basicInfo' && item.code !== 'jobIntent'))
 const activeModuleConfig = computed(() => sortedModules.value.find((item) => item.code === activeModule.value) ?? sortedModules.value[0])
 const activeModuleVisible = computed(() => Boolean(activeModuleConfig.value?.visible))
-const previewName = computed(() => form.fullName || '全民简历')
-const previewExperienceText = computed(() => {
-  if (form.yearsOfExperience == null) return ''
-  if (form.yearsOfExperience === 0) return '应届生'
-  if (form.yearsOfExperience >= 10) return '10年及以上'
-  return `${form.yearsOfExperience}年经验`
-})
-const previewBasicMeta = computed(() => [form.gender, formatBirthMonth(form.birthDate), form.city, previewExperienceText.value].filter(Boolean).join(' ｜ ') || '性别 ｜ 出生年月 ｜ 城市 ｜ 工作经验')
-const previewContactMeta = computed(() => [form.phone, form.email].filter(Boolean).join(' ｜ ') || '手机号 ｜ 邮箱')
-const previewIntentMeta = computed(() => {
-  const salary = form.expectedSalaryMin != null || form.expectedSalaryMax != null ? `${form.expectedSalaryMin ?? '面议'}-${form.expectedSalaryMax ?? '面议'} 元/月` : '薪资面议'
-  return [form.expectedCategory || '目标岗位待补充', form.city || '目标城市待补充', salary].join(' ｜ ')
-})
 const basicInfoMissingFields = computed(() => {
   const missing: string[] = []
   if (!form.fullName?.trim()) missing.push('姓名')
@@ -111,12 +123,103 @@ const basicInfoMissingFields = computed(() => {
   if (form.yearsOfExperience == null) missing.push('工作年限')
   return missing
 })
+const previewResumeDetail = computed<ResumeDetail>(() => ({
+  resume: {
+    id: form.id,
+    templateCode: form.templateCode,
+    fullName: form.fullName,
+    gender: form.gender,
+    age: form.age,
+    birthDate: form.birthDate,
+    displayAge: form.displayAge,
+    phone: form.phone,
+    email: form.email,
+    city: form.city,
+    summary: form.summary,
+    expectedCategory: form.expectedCategory,
+    expectedSalaryMin: form.expectedSalaryMin,
+    expectedSalaryMax: form.expectedSalaryMax,
+    highestEducation: form.highestEducation,
+    yearsOfExperience: form.yearsOfExperience,
+    completenessScore: completenessScore.value,
+  },
+  moduleConfig: form.moduleConfig.map((item) => ({ ...item })),
+  educations: form.educations.map((item) => ({ ...item })),
+  experiences: form.experiences.map((item) => ({ ...item })),
+  projects: form.projects.map((item) => ({ ...item })),
+  internships: form.internships.map((item) => ({ ...item })),
+  campusExperiences: form.campusExperiences.map((item) => ({ ...item })),
+  honors: form.honors.map((item) => ({ ...item })),
+  hobbies: form.hobbies.map((item) => ({ ...item })),
+  customFields: form.customFields.map((item) => ({ ...item })),
+  skills: [...form.skills],
+  missingItems: [...missingItems.value],
+  completenessScore: completenessScore.value,
+}))
+const exportFilename = computed(() => `${(form.fullName?.trim() || '简历').replace(/[\\/:*?"<>|]/g, '-')}.pdf`)
+const isEditingSavedResume = computed(() => editingSavedResumeId.value != null)
+const editorStatusText = computed(() => (
+  isEditingSavedResume.value
+    ? `正在编辑：${editingSavedResumeName.value || '已保存简历'}`
+    : '当前正在编辑主草稿'
+))
+const saveDialogTitle = computed(() => (isEditingSavedResume.value ? '更新简历' : '保存简历'))
+const saveDialogHint = computed(() => (
+  isEditingSavedResume.value
+    ? '更新后会同步覆盖这份已保存简历，并更新当前草稿内容。'
+    : '保存后会同步更新当前草稿，并在“我的简历”中新增一份命名简历。'
+))
+const saveDialogConfirmText = computed(() => (isEditingSavedResume.value ? '确认更新' : '确认保存'))
 
-async function fetchResume() {
+function parseSavedResumeId(value: unknown) {
+  const rawValue = Array.isArray(value) ? value[0] : value
+  const parsed = Number(rawValue)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+function resetEditingSavedResumeContext() {
+  editingSavedResumeId.value = null
+  editingSavedResumeName.value = ''
+}
+
+async function fetchCurrentDraftResume() {
+  const response = await client.get('/jobseeker/resume')
+  hydrateResume(response.data as ResumeDetail)
+  resetEditingSavedResumeContext()
+}
+
+async function fetchSavedResumeForEditing(savedResumeId: number) {
+  const response = await client.get(`/jobseeker/saved-resumes/${savedResumeId}`)
+  const detail = response.data as SavedResumeDetail
+  hydrateResume(detail.resumeDetail)
+  editingSavedResumeId.value = detail.id
+  editingSavedResumeName.value = detail.name
+  savedResumeName.value = detail.name
+}
+
+async function initializeResumeStudio() {
   loading.value = true
   try {
-    const response = await client.get('/jobseeker/resume')
-    hydrateResume(response.data as ResumeDetail)
+    const isEditMode = route.query.mode === 'edit'
+    const savedResumeId = parseSavedResumeId(route.query.savedResumeId)
+
+    if (isEditMode && savedResumeId != null) {
+      try {
+        await fetchSavedResumeForEditing(savedResumeId)
+        return
+      } catch (error) {
+        ElMessage.error(
+          String(
+            (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+              || (error as { message?: string })?.message
+              || '已保存简历不存在',
+          ),
+        )
+        await router.replace({ path: '/resume' })
+      }
+    }
+
+    await fetchCurrentDraftResume()
   } finally {
     loading.value = false
   }
@@ -141,19 +244,55 @@ function hydrateResume(payload: ResumeDetail) {
   ensureActiveModule()
 }
 
-async function saveResume() {
+function saveResume() {
   if (basicInfoMissingFields.value.length) {
     ElMessage.warning(`请先完善基本信息：${basicInfoMissingFields.value.join('、')}`)
     activeModule.value = 'basicInfo'
     return
   }
-  loading.value = true
+  savedResumeName.value = editingSavedResumeName.value || ''
+  saveDialogVisible.value = true
+}
+
+function resetSaveResumeDialog() {
+  savedResumeName.value = ''
+  saveDialogSubmitting.value = false
+}
+
+async function submitSavedResume() {
+  const name = savedResumeName.value.trim()
+  if (!name) {
+    ElMessage.warning('请输入简历名称')
+    return
+  }
+  saveDialogSubmitting.value = true
   try {
-    const response = await client.put('/jobseeker/resume', buildPayload())
-    hydrateResume(response.data as ResumeDetail)
-    ElMessage.success('简历已保存')
+    const updatingExisting = isEditingSavedResume.value && editingSavedResumeId.value != null
+    const payload = {
+      name,
+      draft: buildPayload(),
+    }
+    const response = updatingExisting
+      ? await client.put(`/jobseeker/saved-resumes/${editingSavedResumeId.value}`, payload as UpdateSavedResumeRequest)
+      : await client.post('/jobseeker/saved-resumes', payload as CreateSavedResumeRequest)
+    const data = response.data as CreateSavedResumeResponse | UpdateSavedResumeResponse
+    hydrateResume(data.currentDraft)
+    if (updatingExisting) {
+      editingSavedResumeId.value = data.savedResume.id
+      editingSavedResumeName.value = data.savedResume.name
+    }
+    saveDialogVisible.value = false
+    ElMessage.success(`简历“${data.savedResume.name}”${updatingExisting ? '已更新' : '已保存'}`)
+  } catch (error) {
+    ElMessage.error(
+      String(
+        (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+          || (error as { message?: string })?.message
+          || '简历保存失败',
+      ),
+    )
   } finally {
-    loading.value = false
+    saveDialogSubmitting.value = false
   }
 }
 
@@ -182,21 +321,6 @@ function normalizeModuleConfig(items?: ResumeModuleConfigItem[]) {
   return normalized
 }
 function cloneDefaultModuleConfig() { return normalizeModuleConfig(MODULE_DEFINITIONS) }
-function formatPeriodMonth(value?: string) {
-  if (!value) return ''
-  const normalized = dayjs(value)
-  if (!normalized.isValid()) return value
-  return normalized.format('YYYY-MM')
-}
-function sectionPeriod(startDate?: string, endDate?: string, current?: boolean) {
-  if (!startDate && !endDate && !current) return '时间待补充'
-  return `${formatPeriodMonth(startDate) || '开始时间'} ~ ${current ? '至今' : (formatPeriodMonth(endDate) || '结束时间')}`
-}
-function formatBirthMonth(value?: string) {
-  if (!value) return ''
-  const [year, month] = value.slice(0, 7).split('-')
-  return `${year}年${month}月`
-}
 function normalizeMonthValue(value?: string) {
   if (!value) return ''
   const normalized = dayjs(value)
@@ -321,156 +445,35 @@ function buildPayload(): ResumePayload {
 
 dayjs.locale('zh-cn')
 form.moduleConfig = cloneDefaultModuleConfig()
-onMounted(fetchResume)
+watch(
+  () => [route.query.mode, route.query.savedResumeId],
+  () => {
+    void initializeResumeStudio()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <el-config-provider :locale="zhCn">
     <div class="resume-studio-page section-grid">
-    <section class="studio-stage">
-      <div class="paper-stage">
-        <article class="resume-paper">
-          <div class="resume-paper__inner">
-            <header class="paper-header">
-              <div class="paper-header__main">
-                <h1>{{ previewName }}</h1>
-                <p>{{ previewIntentMeta }}</p>
-                <p>{{ previewBasicMeta }}</p>
-                <p>{{ previewContactMeta }}</p>
-              </div>
-            </header>
-
-            <template v-for="module in paperModules" :key="module.code">
-              <section v-if="module.code === 'education'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div v-if="form.educations.length">
-                  <article v-for="(item, index) in form.educations" :key="`paper-edu-${index}`" class="paper-entry">
-                    <div class="paper-entry__head">
-                      <strong>{{ item.schoolName || '学校名称' }} - {{ item.major || '专业' }} - {{ item.degree || '学历' }}</strong>
-                      <span>{{ sectionPeriod(item.startDate, item.endDate, item.current) }}</span>
-                    </div>
-                    <p>{{ item.description || '补充课程、成绩、项目或校园成果。' }}</p>
-                  </article>
-                </div>
-                <p v-else class="paper-empty">教育背景暂未填写</p>
-              </section>
-
-              <section v-else-if="module.code === 'workExperience'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div v-if="form.experiences.length">
-                  <article v-for="(item, index) in form.experiences" :key="`paper-exp-${index}`" class="paper-entry">
-                    <div class="paper-entry__head">
-                      <strong>{{ item.companyName || '公司名称' }} - {{ item.jobTitle || '岗位名称' }}</strong>
-                      <span>{{ sectionPeriod(item.startDate, item.endDate, item.current) }}</span>
-                    </div>
-                    <p>{{ item.description || '补充职责、动作与结果。' }}</p>
-                  </article>
-                </div>
-                <p v-else class="paper-empty">工作经历暂未填写</p>
-              </section>
-
-              <section v-else-if="module.code === 'projectExperience'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div v-if="form.projects.length">
-                  <article v-for="(item, index) in form.projects" :key="`paper-proj-${index}`" class="paper-entry">
-                    <div class="paper-entry__head">
-                      <strong>{{ item.projectName || '项目名称' }} - {{ item.roleName || '担任角色' }}</strong>
-                      <span>{{ sectionPeriod(item.startDate, item.endDate, item.current) }}</span>
-                    </div>
-                    <p>{{ item.description || '补充背景、职责与项目成果。' }}</p>
-                  </article>
-                </div>
-                <p v-else class="paper-empty">项目经历暂未填写</p>
-              </section>
-
-              <section v-else-if="module.code === 'internshipExperience'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div v-if="form.internships.length">
-                  <article v-for="(item, index) in form.internships" :key="`paper-intern-${index}`" class="paper-entry">
-                    <div class="paper-entry__head">
-                      <strong>{{ item.title || '公司 / 单位' }} - {{ item.subtitle || '岗位 / 角色' }}</strong>
-                      <span>{{ sectionPeriod(item.startDate, item.endDate, item.current) }}</span>
-                    </div>
-                    <p>{{ item.description || '补充实习内容与成果。' }}</p>
-                  </article>
-                </div>
-                <p v-else class="paper-empty">实习经历暂未填写</p>
-              </section>
-
-              <section v-else-if="module.code === 'campusExperience'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div v-if="form.campusExperiences.length">
-                  <article v-for="(item, index) in form.campusExperiences" :key="`paper-campus-${index}`" class="paper-entry">
-                    <div class="paper-entry__head">
-                      <strong>{{ item.title || '组织 / 活动' }} - {{ item.subtitle || '角色' }}</strong>
-                      <span>{{ sectionPeriod(item.startDate, item.endDate, item.current) }}</span>
-                    </div>
-                    <p>{{ item.description || '补充活动内容与收获。' }}</p>
-                  </article>
-                </div>
-                <p v-else class="paper-empty">校园经历暂未填写</p>
-              </section>
-
-              <section v-else-if="module.code === 'skills'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div class="paper-skill-list">
-                  <span v-for="skill in form.skills" :key="skill" class="paper-skill-pill">{{ skill }}</span>
-                  <span v-if="!form.skills.length" class="paper-empty">技能特长暂未填写</span>
-                </div>
-              </section>
-
-              <section v-else-if="module.code === 'honors'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div v-if="form.honors.length">
-                  <article v-for="(item, index) in form.honors" :key="`paper-honor-${index}`" class="paper-entry">
-                    <div class="paper-entry__head">
-                      <strong>{{ item.title || '荣誉名称' }} - {{ item.subtitle || '授予单位' }}</strong>
-                      <span>{{ formatPeriodMonth(item.startDate) || '日期待补充' }}</span>
-                    </div>
-                    <p>{{ item.description || '补充荣誉背景与说明。' }}</p>
-                  </article>
-                </div>
-                <p v-else class="paper-empty">荣誉证书暂未填写</p>
-              </section>
-
-              <section v-else-if="module.code === 'selfEvaluation'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <p>{{ form.summary || '请补充你的职业定位、能力结构和代表性优势。' }}</p>
-              </section>
-
-              <section v-else-if="module.code === 'hobbies'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div class="paper-skill-list">
-                  <span v-for="(item, index) in form.hobbies" :key="`paper-hobby-${index}`" class="paper-skill-pill">{{ item.title || '兴趣名称' }}</span>
-                  <span v-if="!form.hobbies.length" class="paper-empty">兴趣爱好暂未填写</span>
-                </div>
-              </section>
-
-              <section v-else-if="module.code === 'customFields'" class="paper-section">
-                <div class="paper-section__title">{{ module.label }}</div>
-                <div v-if="form.customFields.length" class="paper-custom-list">
-                  <div v-for="(item, index) in form.customFields" :key="`paper-custom-${index}`" class="paper-custom-row">
-                    <strong>{{ item.key || '信息名称' }}</strong>
-                    <span>{{ item.value || '信息内容' }}</span>
-                  </div>
-                </div>
-                <p v-else class="paper-empty">自定义信息暂未填写</p>
-              </section>
-            </template>
-          </div>
-        </article>
-
-      </div>
-    </section>
-
-    <section class="editor-shell">
-      <div class="editor-toolbar">
-        <div class="editor-toolbar__left"><span class="toolbar-note">填写后会自动排版在简历上，不需要的模块可以隐藏。</span></div>
-        <div class="editor-toolbar__right">
-          <div class="completion-chip">{{ completenessScore }}% 完整</div>
-          <el-button type="primary" :loading="loading" @click="saveResume">保存简历</el-button>
+      <section class="studio-stage">
+        <div class="paper-stage">
+          <ResumePreviewDocument :detail="previewResumeDetail" mode="preview" />
         </div>
-      </div>
+      </section>
+
+      <section class="editor-shell">
+        <div class="editor-toolbar">
+          <div class="editor-toolbar__left">
+            <span class="editor-status-chip">{{ editorStatusText }}</span>
+          </div>
+          <div class="editor-toolbar__right">
+            <div class="completion-chip">{{ completenessScore }}% 完整</div>
+            <el-button plain :disabled="loading" @click="exportDialogVisible = true">导出 PDF</el-button>
+            <el-button type="primary" :loading="loading" @click="saveResume">保存简历</el-button>
+          </div>
+        </div>
 
       <div class="editor-tabs-wrap">
         <div class="editor-tabs">
@@ -495,9 +498,6 @@ onMounted(fetchResume)
         <div class="editor-card__head">
           <div>
             <h3>{{ activeModuleConfig?.label || '模块编辑' }}</h3>
-            <p v-if="activeModuleVisible && activeModule === 'basicInfo'">基本信息是必填模块，不能隐藏；填写后会同步到上方简历预览区。</p>
-            <p v-else-if="activeModuleVisible">当前模块内容会实时同步到上方简历预览区，顺序和显示状态也会一起生效。</p>
-            <p v-else>这个模块当前已隐藏，重新打开后就能继续编辑并恢复到预览中。</p>
           </div>
         </div>
 
@@ -541,7 +541,6 @@ onMounted(fetchResume)
 
           <template v-else-if="activeModule === 'education'">
             <div class="editor-list-head">
-              <span>教育背景会直接排版到预览页，建议按时间倒序填写。</span>
               <el-button type="primary" plain @click="addEducation">新增一条教育背景</el-button>
             </div>
             <el-empty v-if="!form.educations.length" description="还没有教育背景" />
@@ -599,7 +598,6 @@ onMounted(fetchResume)
 
           <template v-else-if="activeModule === 'workExperience'">
             <div class="editor-list-head">
-              <span>工作经历建议写清职责、动作、结果，越像真实简历越好。</span>
               <el-button type="primary" plain @click="addExperience">新增一条工作经历</el-button>
             </div>
             <el-empty v-if="!form.experiences.length" description="还没有工作经历" />
@@ -647,7 +645,6 @@ onMounted(fetchResume)
 
           <template v-else-if="activeModule === 'projectExperience'">
             <div class="editor-list-head">
-              <span>项目经历可突出你在项目中的角色与可量化成果。</span>
               <el-button type="primary" plain @click="addProject">新增一条项目经历</el-button>
             </div>
             <el-empty v-if="!form.projects.length" description="还没有项目经历" />
@@ -695,7 +692,6 @@ onMounted(fetchResume)
           
           <template v-else-if="activeModule === 'internshipExperience'">
             <div class="editor-list-head">
-              <span>实习经历建议保留最能支撑求职方向的内容。</span>
               <el-button type="primary" plain @click="addInternship">新增一条实习经历</el-button>
             </div>
             <el-empty v-if="!form.internships.length" description="还没有实习经历" />
@@ -741,7 +737,6 @@ onMounted(fetchResume)
 
           <template v-else-if="activeModule === 'campusExperience'">
             <div class="editor-list-head">
-              <span>校园经历适合写学生组织、竞赛、志愿活动或干部经历。</span>
               <el-button type="primary" plain @click="addCampusExperience">新增一条校园经历</el-button>
             </div>
             <el-empty v-if="!form.campusExperiences.length" description="还没有校园经历" />
@@ -801,7 +796,6 @@ onMounted(fetchResume)
 
           <template v-else-if="activeModule === 'honors'">
             <div class="editor-list-head">
-              <span>荣誉证书可以按获得时间倒序排列。</span>
               <el-button type="primary" plain @click="addHonor">新增一条荣誉证书</el-button>
             </div>
             <el-empty v-if="!form.honors.length" description="还没有荣誉证书" />
@@ -840,7 +834,6 @@ onMounted(fetchResume)
 
           <template v-else-if="activeModule === 'hobbies'">
             <div class="editor-list-head">
-              <span>兴趣爱好建议简洁，尽量选择能体现个人状态与气质的内容。</span>
               <el-button type="primary" plain @click="addHobby">新增一条兴趣爱好</el-button>
             </div>
             <el-empty v-if="!form.hobbies.length" description="还没有兴趣爱好" />
@@ -861,7 +854,6 @@ onMounted(fetchResume)
 
           <template v-else-if="activeModule === 'customFields'">
             <div class="editor-list-head">
-              <span>自定义信息适合补充标准模块没有覆盖的内容。</span>
               <el-button type="primary" plain @click="addCustomField">新增一条自定义信息</el-button>
             </div>
             <el-empty v-if="!form.customFields.length" description="还没有自定义信息" />
@@ -882,11 +874,45 @@ onMounted(fetchResume)
         </template>
 
         <div v-else class="module-hidden-state">
-          <el-empty description="这个模块当前已隐藏，打开后即可继续编辑并显示到简历预览中。" />
+          <el-empty :description="''" />
           <el-button type="primary" @click="handleModuleVisibilityChange(activeModuleConfig?.code || activeModule, true)">打开当前模块</el-button>
         </div>
       </section>
     </section>
+      <el-dialog
+        v-model="saveDialogVisible"
+        width="420px"
+        :title="saveDialogTitle"
+        destroy-on-close
+        @closed="resetSaveResumeDialog"
+      >
+        <el-form label-position="top">
+          <el-form-item label="简历名称">
+            <el-input
+              v-model.trim="savedResumeName"
+              maxlength="40"
+              show-word-limit
+              placeholder="例如：简历一"
+              @keyup.enter="submitSavedResume"
+            />
+          </el-form-item>
+        </el-form>
+        <p class="save-resume-hint">{{ saveDialogHint }}</p>
+        <template #footer>
+          <div class="save-resume-footer">
+            <el-button @click="saveDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="saveDialogSubmitting" @click="submitSavedResume">{{ saveDialogConfirmText }}</el-button>
+          </div>
+        </template>
+      </el-dialog>
+      <ResumeExportDialog
+        v-model="exportDialogVisible"
+        :loading="loading"
+        :detail="previewResumeDetail"
+        :filename="exportFilename"
+        title="导出简历 PDF"
+        subtitle="将按照当前简历内容自动分页，保证导出内容完整。"
+      />
     </div>
   </el-config-provider>
 </template>
@@ -969,9 +995,29 @@ onMounted(fetchResume)
   border: 1px solid rgba(24, 36, 43, 0.08);
   box-shadow: var(--shadow-soft);
 }
+.editor-toolbar__left { display: flex; align-items: center; }
+.editor-status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.1);
+  color: #0369a1;
+  font-size: 13px;
+  font-weight: 700;
+}
 .editor-toolbar { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-.editor-toolbar__right { display: flex; gap: 12px; align-items: center; }
-.toolbar-note { color: #f97316; font-size: 13px; }
+.editor-toolbar__right { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.save-resume-hint {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.save-resume-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
 .completion-chip {
   padding: 9px 14px;
   border-radius: 999px;
@@ -1031,7 +1077,6 @@ onMounted(fetchResume)
 .editor-card { margin-top: 18px; padding: 22px; }
 .editor-card__head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .editor-card__head h3 { margin: 0; font-size: 18px; }
-.editor-card__head p { margin: 8px 0 0; color: var(--text-muted); line-height: 1.7; }
 .editor-form-grid { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .birth-field {
   display: flex;
@@ -1061,12 +1106,11 @@ onMounted(fetchResume)
 }
 .editor-list-head {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 14px;
   align-items: center;
   margin-bottom: 16px;
 }
-.editor-list-head span { color: var(--text-muted); line-height: 1.7; }
 .editor-entry {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 112px;

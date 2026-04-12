@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.Data;
 
 public final class JobDtos {
@@ -46,6 +48,10 @@ public final class JobDtos {
         @NotBlank(message = "岗位描述不能为空")
         private String description;
 
+        private List<String> benefitTags;
+
+        private List<String> skillTags;
+
         @Future(message = "过期时间必须晚于当前时间")
         private LocalDateTime expireAt;
     }
@@ -59,8 +65,8 @@ public final class JobDtos {
         private Integer salaryMax;
         private String educationRequirement;
         private String experienceRequirement;
-        private String sortBy;
-        private String sortDirection;
+        private List<String> benefitTags = new ArrayList<>();
+        private String sortKey = "default";
         private Long pageNum = 1L;
         private Long pageSize = 10L;
     }

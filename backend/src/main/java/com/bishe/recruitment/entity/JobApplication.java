@@ -23,6 +23,12 @@ public class JobApplication extends BaseEntity {
 
     private Long resumeId;
 
+    private Long savedResumeId;
+
+    private String savedResumeName;
+
+    private String resumeSnapshotJson;
+
     private String status;
 
     private String statusRemark;

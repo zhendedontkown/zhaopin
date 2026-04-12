@@ -12,6 +12,7 @@ export interface PageResponse<T> {
 }
 
 export type RoleCode = 'ADMIN' | 'COMPANY' | 'JOBSEEKER' | ''
+export type UserAccountStatus = 'ACTIVE' | 'DISABLED' | 'DELETED'
 
 export interface UserSession {
   userId: number
@@ -39,12 +40,6 @@ export interface JobseekerProfile {
   fullName: string
   phone: string
   email: string
-  desiredPositionCategory?: string
-  expectedSalaryMin?: number
-  expectedSalaryMax?: number
-  preferredCity?: string
-  highestEducation?: string
-  yearsOfExperience?: number
 }
 
 export interface UserProfileResponse {
@@ -59,6 +54,12 @@ export interface UserProfileResponse {
   jobseekerProfile?: JobseekerProfile
 }
 
+export interface PasswordChangePayload {
+  currentPassword: string
+  newPassword: string
+  confirmPassword: string
+}
+
 export interface JobRecord {
   id: number
   jobCode: string
@@ -71,14 +72,89 @@ export interface JobRecord {
   educationRequirement: string
   headcount: number
   description: string
+  skillTags?: string[]
+  benefitTags?: string[]
   status: string
   publishedAt?: string
   expireAt?: string
   companyUserId: number
   companyName: string
   recentlyApplied?: boolean
-  matchScore?: number
-  matchReasons?: string[]
+  favorited?: boolean
+  createdAt?: string
+}
+
+export interface AdminDashboardStats {
+  userCount: number
+  companyUserCount: number
+  jobseekerUserCount: number
+  pendingCompanyAuditCount: number
+  jobCount: number
+  applicationCount: number
+  interviewingCount: number
+  offeredCount: number
+  rejectedCount: number
+}
+
+export interface AdminCompanyUserRecord {
+  userId: number
+  displayName: string
+  companyName: string
+  contactPerson: string
+  phone: string
+  email: string
+  unifiedSocialCreditCode: string
+  auditStatus: string
+  userStatus: UserAccountStatus
+  createdAt: string
+}
+
+export interface AdminCompanyAuditRecord extends AdminCompanyUserRecord {}
+
+export interface AdminJobseekerUserRecord {
+  userId: number
+  displayName: string
+  fullName: string
+  phone: string
+  email: string
+  highestEducation?: string
+  desiredPositionCategory?: string
+  userStatus: UserAccountStatus
+  createdAt: string
+}
+
+export interface AdminManagedJobRecord {
+  id: number
+  jobCode: string
+  title: string
+  category: string
+  location: string
+  salaryMin: number
+  salaryMax: number
+  experienceRequirement: string
+  educationRequirement: string
+  status: string
+  publishedAt?: string
+  createdAt?: string
+  companyUserId: number
+  companyName: string
+}
+
+export interface AdminApplicationRecord {
+  id: number
+  jobId: number
+  jobTitle: string
+  companyUserId: number
+  companyName: string
+  jobseekerUserId: number
+  jobseekerName: string
+  resumeId: number
+  status: string
+  statusText: string
+  statusDescription: string
+  statusRemark?: string
+  appliedAt: string
+  statusUpdatedAt?: string
 }
 
 export interface ResumeEducation {
@@ -188,6 +264,73 @@ export interface ResumeDetail {
   completenessScore: number
 }
 
+export interface SavedResumeSummary {
+  id: number
+  name: string
+  templateCode: string
+  completenessScore: number
+  completeFlag: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SavedResumeDetail {
+  id: number
+  name: string
+  templateCode: string
+  completenessScore: number
+  completeFlag: boolean
+  missingItems: string[]
+  resumeDetail: ResumeDetail
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateSavedResumeRequest {
+  name: string
+  draft: ResumePayload
+}
+
+export interface CreateSavedResumeResponse {
+  savedResume: SavedResumeSummary
+  currentDraft: ResumeDetail
+}
+
+export interface UpdateSavedResumeRequest {
+  name: string
+  draft: ResumePayload
+}
+
+export interface UpdateSavedResumeResponse {
+  savedResume: SavedResumeSummary
+  currentDraft: ResumeDetail
+}
+
+export interface ApplicationResumeViewResponse {
+  applicationId: number
+  resumeId: number
+  savedResumeId?: number
+  savedResumeName?: string
+  jobTitle: string
+  companyName: string
+  snapshotBased: boolean
+  resumeSource: 'SNAPSHOT' | 'CURRENT'
+  resumeDetail: ResumeDetail
+}
+
+export interface ApplyJobRequest {
+  jobId: number
+  savedResumeId: number
+}
+
+export type ApplicationStatusCode =
+  | 'SUBMITTED'
+  | 'VIEWED'
+  | 'INTERVIEW_PENDING'
+  | 'REJECTED'
+  | 'INTERVIEWING'
+  | 'OFFERED'
+
 export interface ApplicationRecord {
   id: number
   jobId: number
@@ -196,10 +339,15 @@ export interface ApplicationRecord {
   companyName: string
   jobseekerUserId: number
   resumeId: number
-  status: string
+  savedResumeId?: number
+  savedResumeName?: string
+  status: ApplicationStatusCode
+  statusText: string
+  statusDescription: string
   statusRemark?: string
   appliedAt: string
   viewedAt?: string
+  statusUpdatedAt?: string
 }
 
 export interface NotificationRecord {
@@ -211,6 +359,7 @@ export interface NotificationRecord {
   readFlag: number
   relatedUserId?: number
   relatedConversationId?: number
+  relatedApplicationId?: number
   createdAt: string
 }
 

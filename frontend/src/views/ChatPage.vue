@@ -15,7 +15,7 @@ const copy = {
   sidebarTitle: '\u804a\u5929\u5bf9\u8c61',
   sidebarSubtitle: '\u9009\u62e9\u4e00\u4e2a\u5bf9\u8bdd\u5bf9\u8c61\u540e\u67e5\u770b\u5b8c\u6574\u8bb0\u5f55',
   sidebarEmpty:
-    '\u6682\u65f6\u8fd8\u6ca1\u6709\u53ef\u8fdb\u5165\u7684\u4f1a\u8bdd\uff0c\u53ef\u4ee5\u4ece\u6295\u9012\u8bb0\u5f55\u91cc\u53d1\u8d77\u6c9f\u901a\u3002',
+    '\u6682\u65f6\u8fd8\u6ca1\u6709\u53ef\u8fdb\u5165\u7684\u4f1a\u8bdd\uff0c\u6c42\u804c\u8005\u53ef\u4ee5\u4ece\u5c97\u4f4d\u8be6\u60c5\u76f4\u63a5\u53d1\u8d77\u5728\u7ebf\u6c9f\u901a\u3002',
   noSelected: '\u8bf7\u5148\u4ece\u5de6\u4fa7\u9009\u62e9\u804a\u5929\u5bf9\u8c61',
   noMessages: '\u8fd8\u6ca1\u6709\u804a\u5929\u8bb0\u5f55\uff0c\u5148\u53d1\u9001\u7b2c\u4e00\u6761\u6d88\u606f\u5427',
   emptyConversationLabel: '\u672a\u9009\u62e9\u4f1a\u8bdd',
@@ -254,9 +254,8 @@ onUnmounted(() => {
   <section class="chat-frame surface-card">
     <aside class="chat-sidebar">
       <div class="chat-sidebar__header">
-        <span class="eyebrow">Conversation</span>
+        <span class="eyebrow">会话列表</span>
         <h2>{{ copy.sidebarTitle }}</h2>
-        <p>{{ copy.sidebarSubtitle }}</p>
       </div>
 
       <div class="chat-sidebar__list">
@@ -280,13 +279,8 @@ onUnmounted(() => {
     <section class="chat-window">
       <header class="chat-window__header">
         <div>
-          <span class="eyebrow">Chat</span>
+          <span class="eyebrow">聊天窗口</span>
           <h2>{{ selectedConversationLabel }}</h2>
-          <p>{{ copy.windowHint }}</p>
-        </div>
-        <div class="chat-window__meta">
-          <span>{{ copy.timeFormat }}</span>
-          <span>{{ copy.sideHint }}</span>
         </div>
       </header>
 

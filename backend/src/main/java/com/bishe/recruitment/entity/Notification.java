@@ -27,5 +27,7 @@ public class Notification {
 
     private Long relatedConversationId;
 
+    private Long relatedApplicationId;
+
     private LocalDateTime createdAt;
 }

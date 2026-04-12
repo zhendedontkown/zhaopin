@@ -5,16 +5,14 @@ import 'element-plus/dist/index.css'
 import './style.css'
 import App from './App.vue'
 import { router } from './router'
-import { AUTH_STORAGE_KEY, AUTH_TOKEN_KEY } from './stores/auth'
-
-// Always force a fresh login when the app is opened or refreshed.
-localStorage.removeItem(AUTH_STORAGE_KEY)
-localStorage.removeItem(AUTH_TOKEN_KEY)
+import { initializeAuthLifecycle } from './stores/auth'
 
 const app = createApp(App)
+const pinia = createPinia()
 
-app.use(createPinia())
+app.use(pinia)
 app.use(router)
+initializeAuthLifecycle(pinia, router)
 app.use(ElementPlus)
 
 app.mount('#app')

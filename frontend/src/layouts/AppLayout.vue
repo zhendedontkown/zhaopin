@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Bell, ChatRound, Crop, DataBoard, Files, Search, Setting, SwitchButton } from '@element-plus/icons-vue'
-import { computed, onMounted, ref } from 'vue'
+import { Bell, ChatRound, Crop, DataBoard, Files, Search, Setting, SwitchButton, User } from '@element-plus/icons-vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useNotificationStore } from '../stores/notification'
@@ -16,7 +16,9 @@ const markingAllRead = ref(false)
 const isJobseeker = computed(() => authStore.role === 'JOBSEEKER')
 const isCompany = computed(() => authStore.role === 'COMPANY')
 const usesTopbarLayout = computed(() => isJobseeker.value || isCompany.value)
-const topbarIdentity = computed(() => authStore.session?.displayName || (isCompany.value ? '企业端' : '求职者端'))
+const topbarIdentity = computed(() =>
+  authStore.profile?.displayName || authStore.session?.displayName || (isCompany.value ? '企业端' : '求职者端'),
+)
 
 const currentPage = computed(() => {
   if (route.path === '/jobs') {
@@ -47,7 +49,51 @@ const currentPage = computed(() => {
   if (route.path === '/chat') {
     return {
       title: '在线沟通',
-      description: '围绕已建立的招聘关系进行一对一实时消息沟通。',
+      description: '围绕岗位和候选人进行一对一实时消息沟通。',
+    }
+  }
+
+  if (route.path === '/profile') {
+    return {
+      title: '我的',
+      description: authStore.role === 'COMPANY'
+        ? '集中查看企业账号资料、认证状态和招聘快捷入口，并在这里维护基础信息与账号安全。'
+        : '集中查看求职账号资料、简历完成度和常用入口，并在这里维护个人资料与账号安全。',
+    }
+  }
+
+  if (route.path.startsWith('/admin/dashboard')) {
+    return {
+      title: '数据统计',
+      description: '集中查看平台用户、岗位、投递与审核等核心运营数据。',
+    }
+  }
+
+  if (route.path.startsWith('/admin/users')) {
+    return {
+      title: '用户管理',
+      description: '统一维护企业与求职者账号状态，处理异常账号与无效用户。',
+    }
+  }
+
+  if (route.path.startsWith('/admin/company-audits')) {
+    return {
+      title: '企业审核',
+      description: '审核企业注册资料，保障平台招聘主体真实可靠。',
+    }
+  }
+
+  if (route.path.startsWith('/admin/jobs')) {
+    return {
+      title: '岗位管理',
+      description: '监管企业发布岗位，及时处理违规、异常或虚假招聘信息。',
+    }
+  }
+
+  if (route.path.startsWith('/admin/applications')) {
+    return {
+      title: '投递记录管理',
+      description: '从平台视角查看投递链路，排查异常数据并核对业务流程。',
     }
   }
 
@@ -58,9 +104,16 @@ const currentPage = computed(() => {
     }
   }
 
+  if (authStore.role === 'ADMIN') {
+    return {
+      title: '系统管理',
+      description: '处理企业审核、岗位监管和系统整体运行情况。',
+    }
+  }
+
   return {
     title: '工作台',
-    description: '围绕当前身份整理关键任务、最新进展和最值得先处理的事项。',
+    description: '围绕当前身份整理关键任务、最新进展和值得优先处理的事项。',
   }
 })
 
@@ -76,7 +129,12 @@ function iconFor(path: string) {
   if (path === '/jobs') return Search
   if (path === '/resume') return Crop
   if (path === '/applications') return Files
-  if (path === '/admin') return Setting
+  if (path === '/admin/dashboard') return DataBoard
+  if (path === '/admin/users') return User
+  if (path === '/admin/company-audits') return Setting
+  if (path === '/admin/jobs') return Search
+  if (path === '/admin/applications') return Files
+  if (path === '/profile') return User
   return ChatRound
 }
 
@@ -96,8 +154,8 @@ async function markAllNotificationsRead() {
 }
 
 async function handleNotificationClick(item: NotificationRecord) {
-  const isChatNotification =
-    item.type === 'NEW_MESSAGE' || item.title === '\u6536\u5230\u65b0\u7684\u804a\u5929\u6d88\u606f'
+  const isChatNotification = item.type === 'NEW_MESSAGE' || item.title === '收到新的聊天消息'
+  const hasApplicationTarget = Boolean(item.relatedApplicationId)
 
   if (item.readFlag === 0) {
     await notificationStore.markRead(item.id)
@@ -109,20 +167,62 @@ async function handleNotificationClick(item: NotificationRecord) {
       path: '/chat',
       query: { peerUserId: String(item.relatedUserId) },
     })
+    return
+  }
+
+  if (hasApplicationTarget) {
+    drawerVisible.value = false
+    await router.push({
+      path: '/applications',
+      query: { focusApplicationId: String(item.relatedApplicationId) },
+    })
   }
 }
 
 function logout() {
-  notificationStore.disconnect()
+  notificationStore.reset()
   authStore.logout()
-  router.push('/login')
+  void router.push('/login')
 }
 
+async function syncNotifications(token?: string) {
+  if (!token) {
+    notificationStore.reset()
+    return
+  }
+
+  try {
+    await notificationStore.fetchNotifications()
+    notificationStore.connect(token)
+  } catch {
+    notificationStore.reset()
+  }
+}
+
+watch(
+  () => authStore.session?.token ?? '',
+  (nextToken, previousToken) => {
+    if (!nextToken) {
+      notificationStore.reset()
+      return
+    }
+
+    if (previousToken && previousToken !== nextToken) {
+      notificationStore.reset()
+    }
+
+    void syncNotifications(nextToken)
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
-  await authStore.fetchProfile()
-  await notificationStore.fetchNotifications()
-  if (authStore.session?.token) {
-    notificationStore.connect(authStore.session.token)
+  try {
+    await authStore.fetchProfile()
+  } catch {
+    if (!authStore.isLoggedIn) {
+      await router.push('/login')
+    }
   }
 })
 </script>
@@ -135,7 +235,7 @@ onMounted(async () => {
           <div class="brand-mark">HR</div>
           <div class="jobseeker-brand__copy">
             <strong>企业在线招聘系统</strong>
-            <span>{{ authStore.session?.displayName || '求职者端' }}</span>
+            <span>{{ authStore.profile?.displayName || authStore.session?.displayName || '工作空间' }}</span>
           </div>
         </div>
 
@@ -169,7 +269,7 @@ onMounted(async () => {
           <div class="brand-mark">HR</div>
           <div class="brand-copy">
             <strong>企业在线招聘系统</strong>
-            <p>围绕岗位发布、简历创作、投递追踪与沟通协同的一体化工作台。</p>
+            <p>覆盖企业审核、岗位监管与系统维护的一体化管理后台。</p>
           </div>
         </div>
 
@@ -188,9 +288,9 @@ onMounted(async () => {
         <div class="identity-panel">
           <div class="identity-top">
             <el-tag type="success" effect="dark">{{ roleLabel }}</el-tag>
-            <span>{{ authStore.workspaceLabel || '统一工作区' }}</span>
+            <span>{{ authStore.workspaceLabel || '管理员工作区' }}</span>
           </div>
-          <strong>{{ authStore.session?.displayName || '未命名用户' }}</strong>
+          <strong>{{ authStore.profile?.displayName || authStore.session?.displayName || '未命名用户' }}</strong>
           <p>{{ authStore.profile?.email || '暂未获取邮箱信息' }}</p>
         </div>
       </aside>
@@ -198,7 +298,7 @@ onMounted(async () => {
       <div class="layout-main">
         <header class="layout-header glass-card">
           <div class="header-copy">
-            <span class="eyebrow">{{ authStore.workspaceLabel || 'Workspace' }}</span>
+            <span class="eyebrow">{{ authStore.workspaceLabel || '管理员工作区' }}</span>
             <h1 class="header-title">{{ currentPage.title }}</h1>
             <p class="header-subtitle">{{ currentPage.description }}</p>
           </div>

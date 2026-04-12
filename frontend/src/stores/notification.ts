@@ -5,6 +5,7 @@ import client from '../api/client'
 import type { NotificationRecord } from '../types'
 
 let stompClient: Client | null = null
+let activeToken = ''
 
 export const useNotificationStore = defineStore('notification', () => {
   const notifications = ref<NotificationRecord[]>([])
@@ -28,24 +29,42 @@ export const useNotificationStore = defineStore('notification', () => {
   }
 
   function connect(token: string) {
-    if (stompClient?.active) return
+    if (!token) return
+
+    if (stompClient && activeToken !== token) {
+      disconnect()
+    }
+
+    if (stompClient?.active && activeToken === token) {
+      return
+    }
+
+    activeToken = token
     stompClient = new Client({
       brokerURL: `${window.location.origin.replace('http', 'ws')}/ws/notifications`,
       connectHeaders: { Authorization: `Bearer ${token}` },
       reconnectDelay: 3000,
     })
+
     stompClient.onConnect = () => {
       stompClient?.subscribe('/user/queue/notifications', (message) => {
         const payload = JSON.parse(message.body) as NotificationRecord
         notifications.value.unshift(payload)
       })
     }
+
     stompClient.activate()
   }
 
   function disconnect() {
     stompClient?.deactivate()
     stompClient = null
+    activeToken = ''
+  }
+
+  function reset() {
+    notifications.value = []
+    disconnect()
   }
 
   return {
@@ -56,5 +75,6 @@ export const useNotificationStore = defineStore('notification', () => {
     markAllRead,
     connect,
     disconnect,
+    reset,
   }
 })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import client from '../api/client'
+import { getApplicationStatusLabel, getApplicationStatusMeta } from '../constants/applicationStatus'
 import { useAuthStore } from '../stores/auth'
 import type { ApplicationRecord, JobRecord } from '../types'
 
@@ -18,8 +19,8 @@ const heroTitle = computed(() => {
 
 const heroDescription = computed(() => {
   if (role.value === 'ADMIN') return '集中查看系统运行情况，并优先处理企业审核和岗位监管。'
-  if (role.value === 'COMPANY') return '从岗位动态到候选人投递，把招聘节奏收进同一个页面。'
-  return '先完善简历，再查看推荐岗位和最近投递进展。'
+  if (role.value === 'COMPANY') return ''
+  return '查看最近发布的岗位列表，并跟进最近投递进展。'
 })
 
 const metrics = computed(() => {
@@ -27,10 +28,17 @@ const metrics = computed(() => {
     return Object.entries(dashboard.value).map(([label, value]) => ({ label, value }))
   }
 
+  if (role.value === 'COMPANY') {
+    return [
+      { label: '当前岗位数', value: jobs.value.length },
+      { label: '近期投递数', value: applications.value.length },
+    ]
+  }
+
   return [
-    { label: role.value === 'COMPANY' ? '当前岗位数' : '推荐岗位数', value: jobs.value.length },
-    { label: role.value === 'COMPANY' ? '近期投递数' : '我的投递数', value: applications.value.length },
-    { label: '当前身份', value: role.value === 'COMPANY' ? '企业端' : '求职者端' },
+    { label: '展示岗位数', value: jobs.value.length },
+    { label: '我的投递数', value: applications.value.length },
+    { label: '当前身份', value: '求职者端' },
   ]
 })
 
@@ -51,21 +59,20 @@ async function fetchData() {
     return
   }
 
-  const [recommendResponse, applicationResponse] = await Promise.all([
-    client.get('/jobs/recommend'),
+  const [jobResponse, applicationResponse] = await Promise.all([
+    client.get('/jobs/search', { params: { pageNum: 1, pageSize: 5, sortKey: 'default' } }),
     client.get('/jobseeker/applications', { params: { pageNum: 1, pageSize: 5 } }),
   ])
-  jobs.value = recommendResponse.data as JobRecord[]
+  jobs.value = (jobResponse.data as { records: JobRecord[] }).records
   applications.value = applicationResponse.data.records as ApplicationRecord[]
 }
 
 function statusLabel(status: string) {
-  if (status === 'SUBMITTED') return '已投递'
-  if (status === 'VIEWED') return '企业已查看'
-  if (status === 'INTERVIEWING') return '面试中'
-  if (status === 'REJECTED') return '未通过'
-  if (status === 'ACCEPTED') return '已录用'
-  return status
+  return getApplicationStatusLabel(status)
+}
+
+function statusDescription(status: string) {
+  return getApplicationStatusMeta(status, role.value === 'COMPANY' ? 'company' : 'jobseeker').description
 }
 
 onMounted(fetchData)
@@ -75,9 +82,9 @@ onMounted(fetchData)
   <div class="section-grid">
     <section class="workspace-hero surface-card">
       <div class="workspace-copy">
-        <span class="eyebrow">{{ authStore.workspaceLabel || 'Workspace' }}</span>
+        <span class="eyebrow">{{ authStore.workspaceLabel || '工作区' }}</span>
         <h2 class="page-title">{{ heroTitle }}</h2>
-        <p class="page-subtitle">{{ heroDescription }}</p>
+        <p v-if="heroDescription" class="page-subtitle">{{ heroDescription }}</p>
       </div>
     </section>
 
@@ -92,13 +99,11 @@ onMounted(fetchData)
       <div class="surface-card board-panel">
         <div class="panel-head">
           <div>
-            <h3>{{ role === 'COMPANY' ? '岗位动态' : role === 'ADMIN' ? '系统指标明细' : '推荐岗位' }}</h3>
-            <p>
-              {{ role === 'COMPANY'
-                ? '查看最近维护的岗位，快速判断哪些岗位还需要继续推进。'
-                : role === 'ADMIN'
-                  ? '管理员可从这里快速浏览核心统计项，判断系统当前状态。'
-                  : '优先从匹配度更高的岗位入手，提高投递效率。' }}
+            <h3>{{ role === 'COMPANY' ? '岗位动态' : role === 'ADMIN' ? '系统指标明细' : '最新岗位' }}</h3>
+            <p v-if="role !== 'COMPANY'">
+              {{ role === 'ADMIN'
+                ? '管理员可以从这里快速浏览核心统计项，判断系统当前状态。'
+                : '默认展示已发布且未过期岗位，帮助你快速开始浏览。' }}
             </p>
           </div>
         </div>
@@ -120,7 +125,7 @@ onMounted(fetchData)
               <strong>{{ job.title }}</strong>
               <p>{{ job.companyName || '我的岗位' }} · {{ job.location }} · {{ job.salaryMin }} - {{ job.salaryMax }}</p>
             </div>
-            <span class="value-chip">{{ job.matchScore ?? job.status }}</span>
+            <span class="value-chip">{{ role === 'COMPANY' ? statusLabel(job.status) : '已发布' }}</span>
           </div>
         </div>
       </div>
@@ -129,7 +134,7 @@ onMounted(fetchData)
         <div class="panel-head">
           <div>
             <h3>{{ role === 'ADMIN' ? '处理建议' : '最近投递' }}</h3>
-            <p>
+            <p v-if="role !== 'COMPANY'">
               {{ role === 'ADMIN'
                 ? '当前系统管理页面更适合优先处理企业审核、岗位下线和日常巡检。'
                 : '这里保留最近的投递状态，帮助你快速理解当前招聘进度。' }}
@@ -153,7 +158,7 @@ onMounted(fetchData)
           <div v-for="item in applications" :key="item.id" class="list-row">
             <div>
               <strong>{{ item.jobTitle }}</strong>
-              <p>{{ item.companyName }} · {{ item.appliedAt?.replace('T', ' ') }}</p>
+              <p>{{ item.companyName }} · {{ item.appliedAt?.replace('T', ' ') }} · {{ statusDescription(item.status) }}</p>
             </div>
             <span class="value-chip">{{ statusLabel(item.status) }}</span>
           </div>

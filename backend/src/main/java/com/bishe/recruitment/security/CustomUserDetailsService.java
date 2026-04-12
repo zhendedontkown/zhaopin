@@ -5,6 +5,7 @@ import com.bishe.recruitment.common.BusinessException;
 import com.bishe.recruitment.entity.SysRole;
 import com.bishe.recruitment.entity.SysUser;
 import com.bishe.recruitment.entity.SysUserRole;
+import com.bishe.recruitment.enums.UserAccountStatus;
 import com.bishe.recruitment.mapper.SysRoleMapper;
 import com.bishe.recruitment.mapper.SysUserMapper;
 import com.bishe.recruitment.mapper.SysUserRoleMapper;
@@ -54,6 +55,14 @@ public class CustomUserDetailsService {
     }
 
     private AuthenticatedUser toAuthenticatedUser(SysUser user) {
+        UserAccountStatus accountStatus = resolveStatus(user.getStatus());
+        if (accountStatus == UserAccountStatus.DISABLED) {
+            throw new BusinessException(401, "账号已被禁用");
+        }
+        if (accountStatus == UserAccountStatus.DELETED) {
+            throw new BusinessException(401, "账号不存在或已删除");
+        }
+
         List<Long> roleIds = sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
                         .eq(SysUserRole::getUserId, user.getId()))
                 .stream()
@@ -63,5 +72,13 @@ public class CustomUserDetailsService {
                 .map(SysRole::getCode)
                 .toList();
         return new AuthenticatedUser(user.getId(), user.getUsername(), user.getPassword(), user.getDisplayName(), roles);
+    }
+
+    private UserAccountStatus resolveStatus(String status) {
+        try {
+            return UserAccountStatus.fromValue(status);
+        } catch (IllegalArgumentException ex) {
+            return UserAccountStatus.ACTIVE;
+        }
     }
 }

@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS jobseeker_profile (
     preferred_city VARCHAR(64),
     highest_education VARCHAR(64),
     years_of_experience INT,
+    preferred_skill_tags_json CLOB,
+    preferred_benefit_tags_json CLOB,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -67,11 +69,25 @@ CREATE TABLE IF NOT EXISTS job_post (
     education_requirement VARCHAR(64) NOT NULL,
     headcount INT NOT NULL,
     description CLOB NOT NULL,
+    benefit_tags_json CLOB,
+    skill_tags_json CLOB,
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
     published_at TIMESTAMP,
     expire_at TIMESTAMP,
+    deleted_flag TINYINT NOT NULL DEFAULT 0,
+    deleted_at TIMESTAMP,
+    deleted_by BIGINT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS job_favorite (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    job_id BIGINT NOT NULL,
+    jobseeker_user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_job_favorite UNIQUE (jobseeker_user_id, job_id)
 );
 
 CREATE TABLE IF NOT EXISTS resume (
@@ -161,13 +177,30 @@ CREATE TABLE IF NOT EXISTS resume_skill (
     skill_name VARCHAR(64) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS saved_resume (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    template_code VARCHAR(32) NOT NULL,
+    snapshot_json CLOB NOT NULL,
+    completeness_score INT NOT NULL DEFAULT 0,
+    complete_flag TINYINT NOT NULL DEFAULT 0,
+    missing_items_json CLOB,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_saved_resume_user_name UNIQUE (user_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS job_application (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     job_id BIGINT NOT NULL,
     company_user_id BIGINT NOT NULL,
     jobseeker_user_id BIGINT NOT NULL,
     resume_id BIGINT NOT NULL,
-    status VARCHAR(32) NOT NULL,
+    saved_resume_id BIGINT,
+    saved_resume_name VARCHAR(128),
+    resume_snapshot_json CLOB,
+    status VARCHAR(32) NOT NULL DEFAULT 'SUBMITTED',
     status_remark VARCHAR(255),
     applied_at TIMESTAMP NOT NULL,
     viewed_at TIMESTAMP,
@@ -214,5 +247,17 @@ CREATE TABLE IF NOT EXISTS notification (
     read_flag TINYINT NOT NULL DEFAULT 0,
     related_user_id BIGINT,
     related_conversation_id BIGINT,
+    related_application_id BIGINT,
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_action_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    target_type VARCHAR(32) NOT NULL,
+    target_id BIGINT NOT NULL,
+    action_type VARCHAR(32) NOT NULL,
+    reason VARCHAR(255),
+    operator_user_id BIGINT NOT NULL,
+    metadata_json CLOB,
     created_at TIMESTAMP NOT NULL
 );

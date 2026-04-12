@@ -1,9 +1,11 @@
 package com.bishe.recruitment.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -37,9 +39,25 @@ public class JobPost extends BaseEntity {
 
     private String description;
 
+    private String benefitTagsJson;
+
+    private String skillTagsJson;
+
     private String status;
 
     private LocalDateTime publishedAt;
 
     private LocalDateTime expireAt;
+
+    private Integer deletedFlag;
+
+    private LocalDateTime deletedAt;
+
+    private Long deletedBy;
+
+    @TableField(exist = false)
+    private List<String> skillTags;
+
+    @TableField(exist = false)
+    private List<String> benefitTags;
 }

@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS jobseeker_profile (
     preferred_city VARCHAR(64),
     highest_education VARCHAR(64),
     years_of_experience INT,
+    preferred_skill_tags_json TEXT,
+    preferred_benefit_tags_json TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -71,11 +73,147 @@ CREATE TABLE IF NOT EXISTS job_post (
     education_requirement VARCHAR(64) NOT NULL,
     headcount INT NOT NULL,
     description TEXT NOT NULL,
+    benefit_tags_json TEXT,
+    skill_tags_json TEXT,
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
     published_at DATETIME,
     expire_at DATETIME,
+    deleted_flag TINYINT NOT NULL DEFAULT 0,
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+SET @jobseeker_profile_preferred_skill_tags_json_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'jobseeker_profile'
+      AND COLUMN_NAME = 'preferred_skill_tags_json'
+);
+SET @jobseeker_profile_preferred_skill_tags_json_sql = IF(
+    @jobseeker_profile_preferred_skill_tags_json_exists = 0,
+    'ALTER TABLE jobseeker_profile ADD COLUMN preferred_skill_tags_json TEXT AFTER years_of_experience',
+    'SELECT 1'
+);
+PREPARE jobseeker_profile_preferred_skill_tags_json_stmt FROM @jobseeker_profile_preferred_skill_tags_json_sql;
+EXECUTE jobseeker_profile_preferred_skill_tags_json_stmt;
+DEALLOCATE PREPARE jobseeker_profile_preferred_skill_tags_json_stmt;
+
+SET @jobseeker_profile_preferred_benefit_tags_json_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'jobseeker_profile'
+      AND COLUMN_NAME = 'preferred_benefit_tags_json'
+);
+SET @jobseeker_profile_preferred_benefit_tags_json_sql = IF(
+    @jobseeker_profile_preferred_benefit_tags_json_exists = 0,
+    'ALTER TABLE jobseeker_profile ADD COLUMN preferred_benefit_tags_json TEXT AFTER preferred_skill_tags_json',
+    'SELECT 1'
+);
+PREPARE jobseeker_profile_preferred_benefit_tags_json_stmt FROM @jobseeker_profile_preferred_benefit_tags_json_sql;
+EXECUTE jobseeker_profile_preferred_benefit_tags_json_stmt;
+DEALLOCATE PREPARE jobseeker_profile_preferred_benefit_tags_json_stmt;
+
+SET @job_post_benefit_tags_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_post'
+      AND COLUMN_NAME = 'benefit_tags_json'
+);
+SET @job_post_benefit_tags_sql = IF(
+    @job_post_benefit_tags_exists = 0,
+    'ALTER TABLE job_post ADD COLUMN benefit_tags_json TEXT AFTER description',
+    'SELECT 1'
+);
+PREPARE job_post_benefit_tags_stmt FROM @job_post_benefit_tags_sql;
+EXECUTE job_post_benefit_tags_stmt;
+DEALLOCATE PREPARE job_post_benefit_tags_stmt;
+
+SET @job_post_skill_tags_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_post'
+      AND COLUMN_NAME = 'skill_tags_json'
+);
+SET @job_post_skill_tags_sql = IF(
+    @job_post_skill_tags_exists = 0,
+    'ALTER TABLE job_post ADD COLUMN skill_tags_json TEXT AFTER benefit_tags_json',
+    'SELECT 1'
+);
+PREPARE job_post_skill_tags_stmt FROM @job_post_skill_tags_sql;
+EXECUTE job_post_skill_tags_stmt;
+DEALLOCATE PREPARE job_post_skill_tags_stmt;
+
+SET @job_post_deleted_flag_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_post'
+      AND COLUMN_NAME = 'deleted_flag'
+);
+SET @job_post_deleted_flag_sql = IF(
+    @job_post_deleted_flag_exists = 0,
+    'ALTER TABLE job_post ADD COLUMN deleted_flag TINYINT NOT NULL DEFAULT 0 AFTER expire_at',
+    'SELECT 1'
+);
+PREPARE job_post_deleted_flag_stmt FROM @job_post_deleted_flag_sql;
+EXECUTE job_post_deleted_flag_stmt;
+DEALLOCATE PREPARE job_post_deleted_flag_stmt;
+
+SET @job_post_deleted_at_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_post'
+      AND COLUMN_NAME = 'deleted_at'
+);
+SET @job_post_deleted_at_sql = IF(
+    @job_post_deleted_at_exists = 0,
+    'ALTER TABLE job_post ADD COLUMN deleted_at DATETIME AFTER deleted_flag',
+    'SELECT 1'
+);
+PREPARE job_post_deleted_at_stmt FROM @job_post_deleted_at_sql;
+EXECUTE job_post_deleted_at_stmt;
+DEALLOCATE PREPARE job_post_deleted_at_stmt;
+
+SET @job_post_deleted_by_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_post'
+      AND COLUMN_NAME = 'deleted_by'
+);
+SET @job_post_deleted_by_sql = IF(
+    @job_post_deleted_by_exists = 0,
+    'ALTER TABLE job_post ADD COLUMN deleted_by BIGINT AFTER deleted_at',
+    'SELECT 1'
+);
+PREPARE job_post_deleted_by_stmt FROM @job_post_deleted_by_sql;
+EXECUTE job_post_deleted_by_stmt;
+DEALLOCATE PREPARE job_post_deleted_by_stmt;
+
+UPDATE job_post
+SET benefit_tags_json = JSON_ARRAY('五险一金', '带薪年假', '周末双休', '团队氛围好')
+WHERE benefit_tags_json IS NULL
+   OR TRIM(benefit_tags_json) = '';
+
+UPDATE job_post
+SET skill_tags_json = JSON_ARRAY()
+WHERE skill_tags_json IS NULL
+   OR TRIM(skill_tags_json) = '';
+
+CREATE TABLE IF NOT EXISTS job_favorite (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    job_id BIGINT NOT NULL,
+    jobseeker_user_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_job_favorite (jobseeker_user_id, job_id)
 );
 
 CREATE TABLE IF NOT EXISTS resume (
@@ -277,13 +415,30 @@ CREATE TABLE IF NOT EXISTS resume_skill (
     skill_name VARCHAR(64) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS saved_resume (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    template_code VARCHAR(32) NOT NULL,
+    snapshot_json LONGTEXT NOT NULL,
+    completeness_score INT NOT NULL DEFAULT 0,
+    complete_flag TINYINT NOT NULL DEFAULT 0,
+    missing_items_json LONGTEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_saved_resume_user_name (user_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS job_application (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     job_id BIGINT NOT NULL,
     company_user_id BIGINT NOT NULL,
     jobseeker_user_id BIGINT NOT NULL,
     resume_id BIGINT NOT NULL,
-    status VARCHAR(32) NOT NULL,
+    saved_resume_id BIGINT,
+    saved_resume_name VARCHAR(128),
+    resume_snapshot_json LONGTEXT,
+    status VARCHAR(32) NOT NULL DEFAULT 'SUBMITTED',
     status_remark VARCHAR(255),
     applied_at DATETIME NOT NULL,
     viewed_at DATETIME,
@@ -301,6 +456,90 @@ CREATE TABLE IF NOT EXISTS application_status_log (
     remark VARCHAR(255),
     created_at DATETIME NOT NULL
 );
+
+SET @job_application_saved_resume_id_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_application'
+      AND COLUMN_NAME = 'saved_resume_id'
+);
+SET @job_application_saved_resume_id_sql = IF(
+    @job_application_saved_resume_id_exists = 0,
+    'ALTER TABLE job_application ADD COLUMN saved_resume_id BIGINT AFTER resume_id',
+    'SELECT 1'
+);
+PREPARE job_application_saved_resume_id_stmt FROM @job_application_saved_resume_id_sql;
+EXECUTE job_application_saved_resume_id_stmt;
+DEALLOCATE PREPARE job_application_saved_resume_id_stmt;
+
+SET @job_application_saved_resume_name_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_application'
+      AND COLUMN_NAME = 'saved_resume_name'
+);
+SET @job_application_saved_resume_name_sql = IF(
+    @job_application_saved_resume_name_exists = 0,
+    'ALTER TABLE job_application ADD COLUMN saved_resume_name VARCHAR(128) AFTER saved_resume_id',
+    'SELECT 1'
+);
+PREPARE job_application_saved_resume_name_stmt FROM @job_application_saved_resume_name_sql;
+EXECUTE job_application_saved_resume_name_stmt;
+DEALLOCATE PREPARE job_application_saved_resume_name_stmt;
+
+SET @job_application_status_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_application'
+      AND COLUMN_NAME = 'status'
+);
+SET @job_application_status_sql = IF(
+    @job_application_status_exists = 0,
+    'ALTER TABLE job_application ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT ''SUBMITTED'' AFTER resume_id',
+    'SELECT 1'
+);
+PREPARE job_application_status_stmt FROM @job_application_status_sql;
+EXECUTE job_application_status_stmt;
+DEALLOCATE PREPARE job_application_status_stmt;
+
+SET @job_application_resume_snapshot_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_application'
+      AND COLUMN_NAME = 'resume_snapshot_json'
+);
+SET @job_application_resume_snapshot_sql = IF(
+    @job_application_resume_snapshot_exists = 0,
+    'ALTER TABLE job_application ADD COLUMN resume_snapshot_json LONGTEXT AFTER resume_id',
+    'SELECT 1'
+);
+PREPARE job_application_resume_snapshot_stmt FROM @job_application_resume_snapshot_sql;
+EXECUTE job_application_resume_snapshot_stmt;
+DEALLOCATE PREPARE job_application_resume_snapshot_stmt;
+
+UPDATE job_application
+SET status = 'SUBMITTED'
+WHERE status IS NULL
+   OR TRIM(status) = '';
+
+UPDATE job_application
+SET status = 'OFFERED'
+WHERE status = 'ACCEPTED';
+
+ALTER TABLE job_application
+MODIFY COLUMN status VARCHAR(32) NOT NULL DEFAULT 'SUBMITTED';
+
+UPDATE application_status_log
+SET from_status = 'OFFERED'
+WHERE from_status = 'ACCEPTED';
+
+UPDATE application_status_log
+SET to_status = 'OFFERED'
+WHERE to_status = 'ACCEPTED';
 
 CREATE TABLE IF NOT EXISTS conversation (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -330,6 +569,18 @@ CREATE TABLE IF NOT EXISTS notification (
     read_flag TINYINT NOT NULL DEFAULT 0,
     related_user_id BIGINT,
     related_conversation_id BIGINT,
+    related_application_id BIGINT,
+    created_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_action_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    target_type VARCHAR(32) NOT NULL,
+    target_id BIGINT NOT NULL,
+    action_type VARCHAR(32) NOT NULL,
+    reason VARCHAR(255),
+    operator_user_id BIGINT NOT NULL,
+    metadata_json TEXT,
     created_at DATETIME NOT NULL
 );
 
@@ -364,3 +615,19 @@ SET @notification_related_conversation_id_sql = IF(
 PREPARE notification_related_conversation_id_stmt FROM @notification_related_conversation_id_sql;
 EXECUTE notification_related_conversation_id_stmt;
 DEALLOCATE PREPARE notification_related_conversation_id_stmt;
+
+SET @notification_related_application_id_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'notification'
+      AND COLUMN_NAME = 'related_application_id'
+);
+SET @notification_related_application_id_sql = IF(
+    @notification_related_application_id_exists = 0,
+    'ALTER TABLE notification ADD COLUMN related_application_id BIGINT',
+    'SELECT 1'
+);
+PREPARE notification_related_application_id_stmt FROM @notification_related_application_id_sql;
+EXECUTE notification_related_application_id_stmt;
+DEALLOCATE PREPARE notification_related_application_id_stmt;

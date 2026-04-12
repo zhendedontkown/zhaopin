@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import client from '../api/client'
-import { useAuthStore } from '../stores/auth'
+import { defaultRouteByRole, useAuthStore } from '../stores/auth'
 
 type AuthMode = 'login' | 'register'
 type RegisterRole = 'company' | 'jobseeker'
@@ -69,12 +69,15 @@ function useDemoAccount(demo: DemoAccount) {
   loginForm.password = demo.password
 }
 
+void demoAccounts
+void useDemoAccount
+
 async function submitLogin() {
   submitting.value = true
   try {
     await authStore.login(loginForm)
     ElMessage.success('登录成功')
-    await router.push('/dashboard')
+    await router.push(defaultRouteByRole(authStore.role))
   } finally {
     submitting.value = false
   }
@@ -162,25 +165,9 @@ async function submitJobseekerRegister() {
                   />
                 </el-form-item>
                 <el-button class="auth-submit" type="primary" native-type="submit" :loading="submitting">
-                  进入工作台
+                  登录
                 </el-button>
               </el-form>
-
-              <div class="auth-quick">
-                <span class="auth-quick__label">快速体验</span>
-                <div class="auth-quick__list">
-                  <button
-                    v-for="item in demoAccounts"
-                    :key="item.label"
-                    type="button"
-                    class="auth-quick__item"
-                    @click="useDemoAccount(item)"
-                  >
-                    <strong>{{ item.label }}</strong>
-                    <span>{{ item.account }}</span>
-                  </button>
-                </div>
-              </div>
 
               <footer class="auth-pane__foot">
                 <span>没有账号？</span>
@@ -655,61 +642,6 @@ async function submitJobseekerRegister() {
   margin-top: 10px;
 }
 
-.auth-quick {
-  display: grid;
-  gap: 12px;
-  padding-top: 8px;
-}
-
-.auth-quick__label {
-  color: #7a8fb8;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.auth-quick__list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.auth-quick__item {
-  cursor: pointer;
-  display: grid;
-  gap: 6px;
-  padding: 14px 12px;
-  border: 1px solid rgba(120, 153, 244, 0.16);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.48);
-  backdrop-filter: blur(6px);
-  text-align: left;
-  transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    background-color 180ms ease;
-}
-
-.auth-quick__item:hover {
-  transform: translateY(-1px);
-  border-color: rgba(120, 153, 244, 0.34);
-  box-shadow: 0 12px 22px rgba(120, 153, 244, 0.12);
-}
-
-.auth-quick__item strong {
-  color: #2b3550;
-  font-size: 13px;
-}
-
-.auth-quick__item span {
-  color: #7b879f;
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-all;
-}
-
 .auth-pane__foot {
   display: flex;
   align-items: center;
@@ -928,8 +860,7 @@ async function submitJobseekerRegister() {
     border-radius: 26px;
   }
 
-  .auth-form__grid,
-  .auth-quick__list {
+  .auth-form__grid {
     grid-template-columns: 1fr;
   }
 
@@ -945,7 +876,6 @@ async function submitJobseekerRegister() {
   .auth-side,
   .auth-side__aurora-a,
   .auth-side__aurora-b,
-  .auth-quick__item,
   .auth-role-switch__item,
   .side-swap-enter-active,
   .side-swap-leave-active,

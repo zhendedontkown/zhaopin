@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS job_post (
     status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
     published_at DATETIME,
     expire_at DATETIME,
+    deleted_flag TINYINT NOT NULL DEFAULT 0,
+    deleted_at DATETIME,
+    deleted_by BIGINT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -273,13 +276,30 @@ CREATE TABLE IF NOT EXISTS resume_skill (
     skill_name VARCHAR(64) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS saved_resume (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    template_code VARCHAR(32) NOT NULL,
+    snapshot_json LONGTEXT NOT NULL,
+    completeness_score INT NOT NULL DEFAULT 0,
+    complete_flag TINYINT NOT NULL DEFAULT 0,
+    missing_items_json LONGTEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_saved_resume_user_name (user_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS job_application (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     job_id BIGINT NOT NULL,
     company_user_id BIGINT NOT NULL,
     jobseeker_user_id BIGINT NOT NULL,
     resume_id BIGINT NOT NULL,
-    status VARCHAR(32) NOT NULL,
+    saved_resume_id BIGINT,
+    saved_resume_name VARCHAR(128),
+    resume_snapshot_json LONGTEXT,
+    status VARCHAR(32) NOT NULL DEFAULT 'SUBMITTED',
     status_remark VARCHAR(255),
     applied_at DATETIME NOT NULL,
     viewed_at DATETIME,
@@ -297,6 +317,55 @@ CREATE TABLE IF NOT EXISTS application_status_log (
     remark VARCHAR(255),
     created_at DATETIME NOT NULL
 );
+
+SET @job_application_saved_resume_id_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_application'
+      AND COLUMN_NAME = 'saved_resume_id'
+);
+SET @job_application_saved_resume_id_sql = IF(
+    @job_application_saved_resume_id_exists = 0,
+    'ALTER TABLE job_application ADD COLUMN saved_resume_id BIGINT AFTER resume_id',
+    'SELECT 1'
+);
+PREPARE job_application_saved_resume_id_stmt FROM @job_application_saved_resume_id_sql;
+EXECUTE job_application_saved_resume_id_stmt;
+DEALLOCATE PREPARE job_application_saved_resume_id_stmt;
+
+SET @job_application_saved_resume_name_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'job_application'
+      AND COLUMN_NAME = 'saved_resume_name'
+);
+SET @job_application_saved_resume_name_sql = IF(
+    @job_application_saved_resume_name_exists = 0,
+    'ALTER TABLE job_application ADD COLUMN saved_resume_name VARCHAR(128) AFTER saved_resume_id',
+    'SELECT 1'
+);
+PREPARE job_application_saved_resume_name_stmt FROM @job_application_saved_resume_name_sql;
+EXECUTE job_application_saved_resume_name_stmt;
+DEALLOCATE PREPARE job_application_saved_resume_name_stmt;
+
+UPDATE job_application
+SET status = 'SUBMITTED'
+WHERE status IS NULL
+   OR TRIM(status) = '';
+
+UPDATE job_application
+SET status = 'OFFERED'
+WHERE status = 'ACCEPTED';
+
+UPDATE application_status_log
+SET from_status = 'OFFERED'
+WHERE from_status = 'ACCEPTED';
+
+UPDATE application_status_log
+SET to_status = 'OFFERED'
+WHERE to_status = 'ACCEPTED';
 
 CREATE TABLE IF NOT EXISTS conversation (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -326,6 +395,18 @@ CREATE TABLE IF NOT EXISTS notification (
     read_flag TINYINT NOT NULL DEFAULT 0,
     related_user_id BIGINT,
     related_conversation_id BIGINT,
+    related_application_id BIGINT,
+    created_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_action_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    target_type VARCHAR(32) NOT NULL,
+    target_id BIGINT NOT NULL,
+    action_type VARCHAR(32) NOT NULL,
+    reason VARCHAR(255),
+    operator_user_id BIGINT NOT NULL,
+    metadata_json TEXT,
     created_at DATETIME NOT NULL
 );
 
@@ -360,3 +441,19 @@ SET @notification_related_conversation_id_sql = IF(
 PREPARE notification_related_conversation_id_stmt FROM @notification_related_conversation_id_sql;
 EXECUTE notification_related_conversation_id_stmt;
 DEALLOCATE PREPARE notification_related_conversation_id_stmt;
+
+SET @notification_related_application_id_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'notification'
+      AND COLUMN_NAME = 'related_application_id'
+);
+SET @notification_related_application_id_sql = IF(
+    @notification_related_application_id_exists = 0,
+    'ALTER TABLE notification ADD COLUMN related_application_id BIGINT',
+    'SELECT 1'
+);
+PREPARE notification_related_application_id_stmt FROM @notification_related_application_id_sql;
+EXECUTE notification_related_application_id_stmt;
+DEALLOCATE PREPARE notification_related_application_id_stmt;
