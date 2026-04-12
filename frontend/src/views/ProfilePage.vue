@@ -146,6 +146,10 @@ function formatDateTime(value?: string) {
   return `${year}-${month}-${day} ${hour}:${minute}`
 }
 
+function isUnauthorizedError(error: unknown) {
+  return (error as { response?: { status?: number } })?.response?.status === 401
+}
+
 async function fetchSavedResumes(pageNum = savedResumePagination.pageNum) {
   if (!isJobseeker.value) return
   savedResumeLoading.value = true
@@ -163,6 +167,9 @@ async function fetchSavedResumes(pageNum = savedResumePagination.pageNum) {
   } catch (error) {
     savedResumes.value = []
     savedResumePagination.total = 0
+    if (isUnauthorizedError(error)) {
+      return
+    }
     ElMessage.error(
       String(
         (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
@@ -246,6 +253,16 @@ async function loadPageData() {
     } else {
       savedResumes.value = []
       savedResumePagination.total = 0
+    }
+  } catch (error) {
+    if (!isUnauthorizedError(error)) {
+      ElMessage.error(
+        String(
+          (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+            || (error as { message?: string })?.message
+            || '页面数据加载失败',
+        ),
+      )
     }
   } finally {
     loading.value = false
@@ -356,6 +373,10 @@ async function openSavedResumePreview(item: SavedResumeSummary) {
     const detail = response.data as SavedResumeDetail
     savedResumePreview.value = detail.resumeDetail
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      savedResumePreviewVisible.value = false
+      return
+    }
     savedResumePreviewError.value = String(
       (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
         || (error as { message?: string })?.message
@@ -422,7 +443,9 @@ function profileInitial(title: string) {
   return title.slice(0, 1) || '我'
 }
 
-onMounted(loadPageData)
+onMounted(() => {
+  void loadPageData()
+})
 </script>
 
 <template>

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore, type Pinia } from 'pinia'
 import type { Router } from 'vue-router'
-import client from '../api/client'
+import client, { resetUnauthorizedHandling } from '../api/client'
 import type { RoleCode, UserProfileResponse, UserSession } from '../types'
 
 export const AUTH_STORAGE_KEY = 'recruitment-user'
@@ -66,6 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
     session.value = nextSession
 
     if (nextSession) {
+      resetUnauthorizedHandling()
       persistSession(nextSession)
       return
     }

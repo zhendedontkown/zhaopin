@@ -6,6 +6,8 @@ const AUTH_STORAGE_KEY = 'recruitment-user'
 const AUTH_TOKEN_KEY = 'recruitment-token'
 const AUTH_UNAUTHORIZED_EVENT = 'auth:unauthorized'
 
+let unauthorizedHandling = false
+
 declare module 'axios' {
   interface AxiosRequestConfig {
     skipErrorToast?: boolean
@@ -48,9 +50,14 @@ function resolveStoredToken() {
   }
 }
 
+export function resetUnauthorizedHandling() {
+  unauthorizedHandling = false
+}
+
 client.interceptors.request.use((config) => {
   const token = resolveStoredToken()
   if (token) {
+    unauthorizedHandling = false
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -71,11 +78,17 @@ client.interceptors.response.use(
   (error) => {
     const message = error?.response?.data?.message || error?.message || '网络异常'
     if (error?.response?.status === 401) {
+      const firstUnauthorized = !unauthorizedHandling
+      unauthorizedHandling = true
       localStorage.removeItem(AUTH_TOKEN_KEY)
       localStorage.removeItem(AUTH_STORAGE_KEY)
-      if (typeof window !== 'undefined') {
+      if (firstUnauthorized && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT))
       }
+      if (firstUnauthorized && !error?.config?.skipErrorToast) {
+        ElMessage.error('未登录或登录已过期，请重新登录')
+      }
+      return Promise.reject(error)
     }
     if (!error?.config?.skipErrorToast) {
       ElMessage.error(message)
